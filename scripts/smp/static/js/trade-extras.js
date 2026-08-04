@@ -294,8 +294,8 @@
         const over = after > tax;
         const room = tax - after;
         const note = over
-          ? fmtM(-room) + ' over the ' + fmtM(tax) + ' tax line'
-          : fmtM(room) + ' under the ' + fmtM(tax) + ' tax line';
+          ? fmtM(-room) + ' OVER the ' + fmtM(tax) + ' cap — trade is illegal'
+          : fmtM(room) + ' under the ' + fmtM(tax) + ' cap';
         return '<div class="tfin-team' + (over ? ' tfin-team--over' : '') + '">'
           + '<div class="tfin-head"><strong>' + esc(team.abbrev) + '</strong>'
           + '<span class="tfin-nums">' + fmtM(before) + ' → <strong>' + fmtM(after) + '</strong></span></div>'

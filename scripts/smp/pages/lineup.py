@@ -56,7 +56,7 @@ def render_lineup_page(
     season: int,
     start_season: int = 2026,
 ) -> str:
-    tax_m = f"${FIN_SOFT_CAP / 1000:.0f}M"
+    cap_m = f"${FIN_SOFT_CAP / 1000:.0f}M"
     starters = "".join(_slot_html(i) for i in range(5))
     bench = "".join(_slot_html(i) for i in range(5, 10))
     body = f"""
@@ -64,7 +64,7 @@ def render_lineup_page(
       <div>
         <h1>Lineup Lab</h1>
         <p class="muted">Build a five — or a full ten · projected overall, win odds vs every roster, salary vs the
-        {esc(tax_m)} tax line · the URL tracks your lineup</p>
+        {esc(cap_m)} hard cap · the URL tracks your lineup</p>
       </div>
       <div class="muted">{esc(season)} ratings</div>
     </section>

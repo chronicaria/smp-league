@@ -1,14 +1,21 @@
 """TEAM_IDENTITY registry: team colors, css-var emission, monograms, award crests.
 
-Hand-curated brand colors (colors only — no logo images, per league rules).
-Everything here is deterministic and data-independent: unknown tids resolve to a
-neutral slate identity so future expansion teams never crash the build.
+Hand-curated brand colors (colors only — no logo images, per league rules), and
+the site's single source of team color: charts, dots, css vars and recolored
+faces all resolve here. Unknown tids get a neutral slate identity so future
+expansion teams never crash the build.
+
+The curated table is keyed by ABBREV because colors belong to a franchise, not
+to a slot in the teams array — SMP II kept all ten names but renumbered eight of
+ten tids. ``register_team_identities`` re-keys it by tid from the export itself.
 
 Public API (other modules code against this):
     TEAM_IDENTITY: dict[int, dict]   keys: primary, secondary, chart, on_primary, abbrev
+    register_team_identities(teams)  re-key TEAM_IDENTITY from the export's tids
     team_identity(tid) -> dict       fallback-aware lookup (never raises)
     team_css_vars(tid) -> str        style-attr fragment with --team-* variables
     team_chart_color(tid) -> str
+    chart_palette() -> list[str]     chart colors in abbrev order
     monogram_svg(text, tid, jersey_number=None, css_class="monogram") -> str
     crest_svg(kind, css_class=None) -> str
     validate_identity() -> True      raises AssertionError on contrast/distinctness fail
@@ -86,23 +93,27 @@ def _chart_distance(a: str, b: str) -> float:
 # Registry
 # ---------------------------------------------------------------------------
 
-# tid -> (abbrev, primary, secondary, chart). on_primary is computed below.
-# NOTE: QNS chart adjusted from the plan's #F5A623 -> #E4950C (deeper amber):
+# abbrev -> (primary, secondary, chart). on_primary is computed below.
+# NOTE: QUE chart adjusted from the plan's #F5A623 -> #E4950C (deeper amber):
 # #F5A623 sat only 16.5 heuristic-units from ITH's #FFD23F yellow (min is 24),
-# and the obvious swap to QNS's own #F58426 collided with DUR's #E0531F.
+# and the obvious swap to QUE's own #F58426 collided with DUR's #E0531F.
 # #E4950C is the smallest move that clears both (>= 26 from every other team).
 _BASE = {
-    0: ("DUR", "#1B2440", "#E0531F", "#E0531F"),
-    1: ("ROC", "#4A3B5C", "#C13B33", "#9966CC"),
-    2: ("CAM", "#2C5545", "#EAE4C8", "#2F8C57"),
-    3: ("QNS", "#23305A", "#F58426", "#E4950C"),
-    4: ("TOR", "#1D4F91", "#6FA8DC", "#4C8CE0"),
-    5: ("GOO", "#1F2E4E", "#F2A900", "#56719F"),
-    6: ("WAL", "#1E4230", "#E8B321", "#8B5E34"),
-    7: ("STO", "#1C5E52", "#2FA98C", "#2FA98C"),
-    8: ("MAN", "#1C3557", "#C8102E", "#D22B3E"),
-    9: ("ITH", "#232F55", "#FFC72C", "#FFD23F"),
+    "ROC": ("#4A3B5C", "#C13B33", "#9966CC"),
+    "WAL": ("#1E4230", "#E8B321", "#8B5E34"),
+    "CAM": ("#2C5545", "#EAE4C8", "#2F8C57"),
+    "DUR": ("#1B2440", "#E0531F", "#E0531F"),
+    "TOR": ("#1D4F91", "#6FA8DC", "#4C8CE0"),
+    "ITH": ("#232F55", "#FFC72C", "#FFD23F"),
+    "GOO": ("#1F2E4E", "#F2A900", "#56719F"),
+    "MAN": ("#1C3557", "#C8102E", "#D22B3E"),
+    "STO": ("#1C5E52", "#2FA98C", "#2FA98C"),
+    "QUE": ("#23305A", "#F58426", "#E4950C"),
 }
+
+# SMP II's tid assignment, in tid order — the compiled-in default so the module
+# is usable before a build registers the export's own mapping.
+_DEFAULT_TID_ABBREVS = ("ROC", "WAL", "CAM", "DUR", "TOR", "ITH", "GOO", "MAN", "STO", "QUE")
 
 # Neutral slate identity for unknown tids (expansion teams, FA/retired sentinels).
 FALLBACK_IDENTITY: Dict[str, Any] = {
@@ -126,19 +137,42 @@ class _IdentityRegistry(dict):
         return dict(FALLBACK_IDENTITY) if default is None else default
 
 
+def _make_identity(abbrev: str) -> Dict[str, Any]:
+    primary, secondary, chart = _BASE[abbrev]
+    return {
+        "abbrev": abbrev,
+        "primary": primary,
+        "secondary": secondary,
+        "chart": chart,
+        "on_primary": _pick_on_color(primary),
+    }
+
+
 TEAM_IDENTITY: Dict[int, Dict[str, Any]] = _IdentityRegistry(
-    (
-        tid,
-        {
-            "abbrev": abbrev,
-            "primary": primary,
-            "secondary": secondary,
-            "chart": chart,
-            "on_primary": _pick_on_color(primary),
-        },
-    )
-    for tid, (abbrev, primary, secondary, chart) in _BASE.items()
+    (tid, _make_identity(abbrev)) for tid, abbrev in enumerate(_DEFAULT_TID_ABBREVS)
 )
+
+
+def register_team_identities(teams: Any) -> None:
+    """Re-key TEAM_IDENTITY from the export's own tid -> abbrev mapping.
+
+    Run once per build (from core.normalize_positions) before anything renders.
+    Teams whose abbrev is not in the curated table are simply left out and fall
+    through to FALLBACK_IDENTITY, so an expansion franchise never crashes and
+    never inherits somebody else's colors.
+    """
+    mapped: Dict[int, Dict[str, Any]] = {}
+    for team in teams or []:
+        if not isinstance(team, dict):
+            continue
+        tid = team.get("tid")
+        abbrev = str(team.get("abbrev") or "").strip().upper()
+        if isinstance(tid, int) and not isinstance(tid, bool) and abbrev in _BASE:
+            mapped[tid] = _make_identity(abbrev)
+    if not mapped:
+        return  # no usable abbrevs in the export: keep the compiled-in defaults
+    TEAM_IDENTITY.clear()
+    TEAM_IDENTITY.update(mapped)
 
 
 def team_identity(tid: Any) -> Dict[str, Any]:
@@ -157,6 +191,16 @@ def team_css_vars(tid: Any) -> str:
 
 def team_chart_color(tid: Any) -> str:
     return team_identity(tid)["chart"]
+
+
+def chart_palette() -> list[str]:
+    """The curated chart colors in abbrev order.
+
+    For the handful of charts that color a series by a team's position in an
+    abbrev-sorted list rather than by tid; indexing this with that position
+    hands each team its own identity color.
+    """
+    return [_BASE[abbrev][2] for abbrev in sorted(_BASE)]
 
 
 # ---------------------------------------------------------------------------
@@ -416,31 +460,33 @@ def crest_svg(kind: str, css_class: Optional[str] = None) -> str:
 
 
 def validate_identity() -> bool:
-    """Assert AA contrast and chart distinctness. Raises AssertionError on fail."""
-    tids = sorted(dict.keys(TEAM_IDENTITY))
-    for tid in tids:
-        ident = TEAM_IDENTITY[tid]
+    """Assert AA contrast and chart distinctness. Raises AssertionError on fail.
+
+    Checks the curated table itself, so it holds no matter how the export
+    numbers its tids.
+    """
+    abbrevs = sorted(_BASE)
+    idents = {abbrev: _make_identity(abbrev) for abbrev in abbrevs}
+    for abbrev in abbrevs:
+        ident = idents[abbrev]
         ratio = contrast_ratio(ident["on_primary"], ident["primary"])
         assert ratio >= 4.5, (
-            "tid {t} ({a}): on_primary {o} on primary {p} contrast {r:.2f} < 4.5".format(
-                t=tid, a=ident["abbrev"], o=ident["on_primary"],
-                p=ident["primary"], r=ratio,
+            "{a}: on_primary {o} on primary {p} contrast {r:.2f} < 4.5".format(
+                a=abbrev, o=ident["on_primary"], p=ident["primary"], r=ratio,
             )
         )
     fb_ratio = contrast_ratio(FALLBACK_IDENTITY["on_primary"], FALLBACK_IDENTITY["primary"])
     assert fb_ratio >= 4.5, "fallback identity fails AA contrast: {r:.2f}".format(r=fb_ratio)
 
-    charts = {tid: TEAM_IDENTITY[tid]["chart"] for tid in tids}
+    charts = {abbrev: idents[abbrev]["chart"] for abbrev in abbrevs}
     assert len(set(charts.values())) == len(charts), "duplicate chart colors"
-    for i, a in enumerate(tids):
-        for b in tids[i + 1 :]:
+    for i, a in enumerate(abbrevs):
+        for b in abbrevs[i + 1 :]:
             d = _chart_distance(charts[a], charts[b])
             assert d >= CHART_DISTINCT_MIN, (
-                "chart colors too close: tid {a} {ca} vs tid {b} {cb} "
+                "chart colors too close: {a} {ca} vs {b} {cb} "
                 "(distance {d:.1f} < {m})".format(
                     a=a, ca=charts[a], b=b, cb=charts[b], d=d, m=CHART_DISTINCT_MIN
                 )
             )
-    abbrevs = [TEAM_IDENTITY[t]["abbrev"] for t in tids]
-    assert len(set(abbrevs)) == len(abbrevs), "duplicate abbrevs"
     return True

@@ -1,19 +1,15 @@
 from __future__ import annotations
 
 import argparse
-import html
 import json
-import random
-import math
 import re
 import shutil
-import unicodedata
-from collections import defaultdict
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from .core import (
     ALL_PLAYERS_BY_PID,
+    NAV_LEAGUE,
     SITE_META,
     active_players,
     latest_game_season,
@@ -158,17 +154,32 @@ def write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+# Day exports are named "2026_day1.json"; the season prefix is optional so the
+# older bare "day1.json" form still matches.
+DAY_EXPORT_RE = re.compile(r"(?:(?P<season>\d{4})_)?day(?P<day>\d+)")
+
+
 def previous_day_json(json_path: Path) -> Path | None:
-    """Find the closest earlier day*.json next to the given export."""
-    match = re.fullmatch(r"day(\d+)", json_path.stem)
+    """Find the closest earlier day export next to the given one.
+
+    The season prefix has to match, so day-over-day standings movement never
+    compares the first day of a season against the last day of the one before.
+    """
+    match = DAY_EXPORT_RE.fullmatch(json_path.stem)
     if not match:
         return None
-    day = int(match.group(1))
+    prefix = f"{match.group('season')}_" if match.group("season") else ""
+    day = int(match.group("day"))
     for prev_day in range(day - 1, max(-1, day - 15), -1):
-        candidate = json_path.with_name(f"day{prev_day}.json")
+        candidate = json_path.with_name(f"{prefix}day{prev_day}.json")
         if candidate.exists():
             return candidate
     return None
+
+
+# Pristine copy of the nav's League group, so gating a page off the nav below is
+# idempotent across repeated generate_site() calls in one process.
+NAV_LEAGUE_ALL = list(NAV_LEAGUE)
 
 
 def generate_site(
@@ -205,6 +216,15 @@ def generate_site(
         SITE_META["prev_ranks"] = None
     SITE_META["season"] = season
     SITE_META["day"] = max((safe_int(g.get("day")) for g in data.get("games", []) if g.get("season") == season), default=0)
+
+    # Rivalries are head-to-head history and nothing else: with no games played the
+    # grid is 90 cells of 0-0 and all 45 pair pages read "these teams have never
+    # met", so year one skips them entirely. Every nav surface (header, footer
+    # sitemap, command palette) reads NAV_LEAGUE at render time, so dropping the
+    # entry here is what keeps the skipped page from being linked as a 404.
+    rivalries_ready = bool(data.get("games"))
+    NAV_LEAGUE[:] = [entry for entry in NAV_LEAGUE_ALL if rivalries_ready or entry[2] != "rivalries"]
+
     game_items, score_label = score_items_for_page(data, teams, schedule_season=schedule_season, schedule_days=schedule_days)
     schedule_items, schedule_label = schedule_items_for_page(data, teams, schedule_season=schedule_season, schedule_days=schedule_days)
 
@@ -239,6 +259,11 @@ def generate_site(
     emit_faces(out_dir, data.get("players", []))
     write_app_data(out_dir, data, teams=teams, players=players, season=season, start_season=start_season)
 
+    # The ledger lives beside the export it was built from, one file per league.
+    # Its append guard is monotonic in (season, phase, games), which a league
+    # reboot breaks — SMP II restarts at 2026 and would be refused forever by
+    # SMP I's 2031 snapshots. Archiving a finished league moves its exports and
+    # its ledger together, so the new league starts from an empty one.
     ledger_path = json_path.parent / "odds_history.json"
     sim_result = league_sim(data, teams, season) or {}
     update_odds_ledger(data, sim_result, path=ledger_path)
@@ -292,7 +317,10 @@ def generate_site(
     for item in all_game_pages:
         write_text(out_dir / "games" / f"{game_slug_from_gid(item.get('gid'))}.html", render_game_page(item, all_game_pages, teams, players, safe_int(item.get("season"), season), feats_by_gid=feats))
 
-    for name, page in render_extras_pages(data, teams).items():
+    extras_pages = render_extras_pages(data, teams)
+    if not rivalries_ready:
+        extras_pages = {name: page for name, page in extras_pages.items() if not name.startswith("rivalries")}
+    for name, page in extras_pages.items():
         write_text(out_dir / name, page)
     for name, page in render_wrapped(data, teams, linkable_gids=set(page_items.keys())).items():
         write_text(out_dir / name, page)
@@ -321,7 +349,7 @@ def generate_site(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate a static HTML basketball league site from a JSON export.")
-    parser.add_argument("json_file", type=Path, nargs="?", default=None, help="Path to the Basketball GM-style JSON file. Defaults to the newest day*.json in the current directory.")
+    parser.add_argument("json_file", type=Path, help="Path to the Basketball GM-style JSON file, such as league-data/2026_day1.json")
     parser.add_argument("--out", type=Path, default=Path("site"), help="Output directory for the generated website")
     parser.add_argument("--start-season", type=int, default=2026, help="First season to show on player stat pages")
     parser.add_argument("--schedule-season", type=int, default=None, help="Season to use for Schedule/Scores pages. Defaults to an exported schedule, or the upcoming season during offseason exports.")
@@ -331,24 +359,8 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def newest_day_json() -> Path | None:
-    candidates = []
-    for path in Path.cwd().glob("day*.json"):
-        match = re.fullmatch(r"day(\d+)", path.stem)
-        if match:
-            candidates.append((int(match.group(1)), path))
-    if not candidates:
-        return None
-    return max(candidates)[1]
-
-
 def main() -> None:
     args = parse_args()
-    if args.json_file is None:
-        args.json_file = newest_day_json()
-        if args.json_file is None:
-            raise SystemExit("No JSON file given and no day*.json found in the current directory.")
-        print(f"Using newest export: {args.json_file.name}")
     summary = generate_site(
         args.json_file,
         args.out,

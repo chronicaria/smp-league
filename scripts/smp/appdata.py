@@ -7,7 +7,7 @@ apps (Compare, Trade Machine, Lineup Lab, Win-Out Machine) instead of each page
 embedding its own player JSON. Schema (see PLAN.md):
 
     { "season": int,
-      "ws_season": int,   # the season the players' "ws" field is drawn from
+      "ws_season": int|null,  # season the players' "ws" is drawn from; null in year one
       "players": [{pid,name,pos,age,tid,jersey,ovr,pot,salary,exp,value,ws,
                    pg:{pts,trb,ast,stl,blk,tov,min,fg_pct,tp_pct,ft_pct,fpts},
                    ratings:{15 subratings}, skills:[...]}],
@@ -16,7 +16,8 @@ embedding its own player JSON. Schema (see PLAN.md):
       "sim": {"strengths":{tid:num}, "hca":num, "logistic_k":num,
               "schedule":[[day,home_tid,away_tid],...],
               "bench_ovrs":[5 floats desc], "season_games":int},
-      "finance": {"tax_line":300000, "notes":"thousands"} }
+      "finance": {"cap":100000, "cap_type":"hard", "tax_line":100000,
+                  "notes":"thousands"} }
 
 All money is in Basketball GM "thousands" units. The sim block mirrors
 simulate_league's win-probability model (see simmodel.sim_client_inputs) so
@@ -26,7 +27,8 @@ season_games is the regular-season length (the Trade Machine's projected
 records span it). "ws" is the player's regular-season Win Shares (ows+dws)
 from ws_season — the newest COMPLETED season — and is null for players
 without a stat row that year (rookies, prospects); the Trade Machine's
-win-shares ledger sums it per side.
+win-shares ledger sums it per side. ws_season is itself null until the league
+has completed a season, so year one never names a season that never happened.
 """
 
 import json
@@ -55,43 +57,25 @@ from .core import (
     total_rebounds,
 )
 from .derived import fantasy_pts
-from .finance import FIN_SOFT_CAP, team_dead_money, team_retention_delta
+from .finance import league_cap, league_cap_type, team_dead_money, team_retention_delta
+from .identity import TEAM_IDENTITY
 from .simmodel import league_bench_ovrs, sim_client_inputs
-
-# Fallback team identity colors (from the PLAN's hand-curated TEAM_IDENTITY
-# registry). identity.py is the canonical owner; appdata prefers importing it
-# and only uses this copy when that module is not present yet.
-_FALLBACK_COLORS: dict[int, dict[str, str]] = {
-    0: {"primary": "#1B2440", "secondary": "#E0531F", "chart": "#E0531F"},
-    1: {"primary": "#4A3B5C", "secondary": "#C13B33", "chart": "#9966CC"},
-    2: {"primary": "#2C5545", "secondary": "#EAE4C8", "chart": "#2F8C57"},
-    3: {"primary": "#23305A", "secondary": "#F58426", "chart": "#F5A623"},
-    4: {"primary": "#1D4F91", "secondary": "#6FA8DC", "chart": "#4C8CE0"},
-    5: {"primary": "#1F2E4E", "secondary": "#F2A900", "chart": "#56719F"},
-    6: {"primary": "#1E4230", "secondary": "#E8B321", "chart": "#8B5E34"},
-    7: {"primary": "#1C5E52", "secondary": "#2FA98C", "chart": "#2FA98C"},
-    8: {"primary": "#1C3557", "secondary": "#C8102E", "chart": "#D22B3E"},
-    9: {"primary": "#232F55", "secondary": "#FFC72C", "chart": "#FFD23F"},
-}
 
 
 def _team_colors(tid: int, team: dict[str, Any]) -> dict[str, str]:
-    """Identity colors for a team: identity.py registry, else the PLAN fallback,
-    else the export's own colors (keeps the payload data-driven for new teams)."""
-    try:
-        from .identity import TEAM_IDENTITY  # created by the identity agent
+    """Identity colors for a team: the identity.py registry, else the export's own
+    colors (keeps the payload data-driven for an expansion team nobody has branded).
 
-        ident = TEAM_IDENTITY.get(tid)
-        if ident:
-            return {
-                "primary": str(ident.get("primary", "#1B2440")),
-                "secondary": str(ident.get("secondary", "#E0531F")),
-                "chart": str(ident.get("chart", ident.get("secondary", "#E0531F"))),
-            }
-    except Exception:
-        pass
-    if tid in _FALLBACK_COLORS:
-        return dict(_FALLBACK_COLORS[tid])
+    identity.py is the single owner of the tid -> color table. appdata used to keep
+    its own copy, which silently went stale the moment a color changed there.
+    """
+    if tid in TEAM_IDENTITY:
+        ident = TEAM_IDENTITY[tid]
+        return {
+            "primary": str(ident["primary"]),
+            "secondary": str(ident["secondary"]),
+            "chart": str(ident.get("chart", ident["secondary"])),
+        }
     export_colors = [c for c in (team.get("colors") or []) if isinstance(c, str)]
     primary = export_colors[0] if export_colors else "#39424f"
     secondary = export_colors[1] if len(export_colors) > 1 else "#8899aa"
@@ -111,21 +95,32 @@ def _round(value: float | None, digits: int = 1) -> float | None:
 _PHASE_SEASON_COMPLETE = 4
 
 
-def ws_reference_season(data: dict[str, Any], season: int) -> int:
+def ws_reference_season(data: dict[str, Any], season: int) -> int | None:
     """The newest season with FINAL Win Shares: the current season once its
-    playoffs have finished (phase >= draft lottery), else the previous one."""
-    return season if phase_value(data) >= _PHASE_SEASON_COMPLETE else season - 1
+    playoffs have finished (phase >= draft lottery), else the previous one.
+
+    ``None`` before any season has been completed. In year one the previous season
+    is older than the league itself, and naming it would label an all-blank Win
+    Shares column "2025" — a season that never happened.
+    """
+    if phase_value(data) >= _PHASE_SEASON_COMPLETE:
+        return season
+    previous = season - 1
+    starting = safe_int((data.get("gameAttributes") or {}).get("startingSeason"), previous)
+    return previous if previous >= starting else None
 
 
-def _player_ws(player: dict[str, Any], ws_season: int) -> float | None:
+def _player_ws(player: dict[str, Any], ws_season: int | None) -> float | None:
     """Regular-season Win Shares (ows+dws) from ``ws_season``; None without a row."""
+    if ws_season is None:
+        return None
     stat = season_regular_stat(player, ws_season)
     if not stat:
         return None
     return _round(safe_float(stat.get("ows")) + safe_float(stat.get("dws")), 1)
 
 
-def _player_entry(player: dict[str, Any], season: int, start_season: int, ws_season: int) -> dict[str, Any]:
+def _player_entry(player: dict[str, Any], season: int, start_season: int, ws_season: int | None) -> dict[str, Any]:
     rating = latest_rating(player, season)
     stat = latest_regular_stat(player, start_season, season)
     gp = stat_gp(stat)
@@ -239,7 +234,15 @@ def build_app_data(
             "bench_ovrs": league_bench_ovrs(players, season),
             "season_games": regular_season_length(data, season),
         },
-        "finance": {"tax_line": FIN_SOFT_CAP, "notes": "thousands"},
+        # A hard cap is a legality boundary, not a penalty threshold, so "cap" is the
+        # honest noun; "tax_line" is the same number under the old key, kept until the
+        # three client apps that read it (lineup.js, trade-extras.js, site.js) move over.
+        "finance": {
+            "cap": int(round(league_cap(data, season))),
+            "cap_type": league_cap_type(data, season),
+            "tax_line": int(round(league_cap(data, season))),
+            "notes": "thousands",
+        },
     }
 
 

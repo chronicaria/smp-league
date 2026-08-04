@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head><script>(function(){var d=document.documentElement,t=null,a=null;try{t=localStorage.getItem("theme");a=localStorage.getItem("myTeamAccent");}catch(e){}d.dataset.themePref=(t==="light"||t==="dark")?t:"auto";d.dataset.theme=(t==="light"||t==="dark")?t:(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");if(a&&/^#[0-9A-Fa-f]{6}$/.test(a)){d.style.setProperty("--accent",a);d.style.setProperty("--accent-soft","color-mix(in srgb, "+a+" 14%, transparent)");}})();</script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Matt Carroll — SMP Basketball League</title>
+  <meta name="description" content="Matt Carroll — stats, standings, and stories from the SMP Basketball League.">
+  <meta property="og:title" content="Matt Carroll — SMP Basketball League">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="SMP Basketball League">
+  <meta property="og:description" content="Matt Carroll — stats, standings, and stories from the SMP Basketball League.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏀</text></svg>">
+  <link rel="stylesheet" href="../assets/styles.css">
+  <script defer src="../assets/site.js"></script>
+</head>
+<body data-root="../">
+  
+    <header class="site-header">
+      <div class="brand"><a href="../index.html">SMP Basketball League</a></div>
+      <div class="nav-search">
+        <input type="search" placeholder="Search players &amp; teams…" data-global-search autocomplete="off" aria-label="Search players and teams" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="global-search-results" aria-activedescendant="">
+        <div class="search-results" id="global-search-results" data-search-results role="listbox" hidden></div>
+      </div>
+      <button class="nav-burger" type="button" aria-label="Toggle menu" aria-controls="primary-nav" aria-expanded="false" data-nav-burger>☰ Menu</button>
+      <nav class="primary-nav" id="primary-nav">
+        <a class="" href="../index.html">Home</a><a class="" href="../schedule.html">Schedule</a><a class="active" href="../players/index.html" aria-current="page">Players</a>
+        <details class="nav-dropdown team-dropdown"><summary>Teams</summary><div class="team-menu nav-menu" aria-label="Teams"><a class="" data-tid="2" data-abbrev="CAM" href="../teams/cambridge-platypuses-2.html">Cambridge Platypuses</a><a class="" data-tid="3" data-abbrev="DUR" href="../teams/durham-destroyers-3.html">Durham Destroyers</a><a class="" data-tid="6" data-abbrev="GOO" href="../teams/gooning-gooners-6.html">Gooning Gooners</a><a class="" data-tid="5" data-abbrev="ITH" href="../teams/ithaca-thunder-5.html">Ithaca Thunder</a><a class="" data-tid="7" data-abbrev="MAN" href="../teams/manhattan-elephants-7.html">Manhattan Elephants</a><a class="" data-tid="9" data-abbrev="QUE" href="../teams/queens-pigeons-9.html">Queens Pigeons</a><a class="" data-tid="0" data-abbrev="ROC" href="../teams/rochester-dragons-0.html">Rochester Dragons</a><a class="" data-tid="8" data-abbrev="STO" href="../teams/stony-brook-stingrays-8.html">Stony Brook Stingrays</a><a class="" data-tid="4" data-abbrev="TOR" href="../teams/toronto-jays-4.html">Toronto Jays</a><a class="" data-tid="1" data-abbrev="WAL" href="../teams/waltham-bears-1.html">Waltham Bears</a></div></details>
+        <details class="nav-dropdown"><summary>League</summary><div class="nav-menu" aria-label="League"><a class="" href="../free-agency.html">Free Agency</a><a class="" href="../draft.html">Draft</a><a class="" href="../history.html">History</a><a class="" href="../records.html">Records</a><a class="" href="../classics.html">Greatest Games</a><a class="" href="../wrapped.html">Wrapped</a></div></details>
+        <details class="nav-dropdown"><summary>Tools</summary><div class="nav-menu" aria-label="Tools"><a class="" href="../trade.html">Trade Machine</a><a class="" href="../compare.html">Compare</a><a class="" href="../lineup.html">Lineup Lab</a><a class="" href="../simulator.html">Win-Out Sim</a></div></details>
+      </nav>
+      <div class="header-controls">
+        <select class="my-team-picker" data-my-team-picker aria-label="My team"><option value="">My team…</option><option value="2">CAM — Cambridge Platypuses</option><option value="3">DUR — Durham Destroyers</option><option value="6">GOO — Gooning Gooners</option><option value="5">ITH — Ithaca Thunder</option><option value="7">MAN — Manhattan Elephants</option><option value="9">QUE — Queens Pigeons</option><option value="0">ROC — Rochester Dragons</option><option value="8">STO — Stony Brook Stingrays</option><option value="4">TOR — Toronto Jays</option><option value="1">WAL — Waltham Bears</option></select>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Theme: auto" title="Theme: auto — click to change"><svg class="tt-icon tt-auto" viewBox="0 0 16 16" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.8v12.4A6.2 6.2 0 0 0 8 1.8z" fill="currentColor"/></svg><svg class="tt-icon tt-dark" viewBox="0 0 16 16" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><path d="M13.4 10.1A5.9 5.9 0 0 1 5.9 2.6a6.2 6.2 0 1 0 7.5 7.5z" fill="currentColor"/></svg><svg class="tt-icon tt-light" viewBox="0 0 16 16" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="8" r="3.4" fill="currentColor"/><g stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 .9v1.8M8 13.3v1.8M.9 8h1.8M13.3 8h1.8M2.98 2.98l1.27 1.27M11.75 11.75l1.27 1.27M13.02 2.98l-1.27 1.27M4.25 11.75l-1.27 1.27"/></g></svg></button>
+      </div>
+    </header>
+    
+  <main class="page-shell">
+    <div class="player-scope player-scope--fa">
+    <section class="player-card player-card--fa">
+      <div class="player-card-face">
+        <span class="player-card-num" aria-label="Jersey number 28">28</span>
+        <div class="player-card-body">
+          <h1>Matt Carroll</h1>
+          
+        </div>
+        <div class="player-card-portrait"><span class="portrait card-portrait portrait-monogram" role="img" aria-label="Matt Carroll"><svg class="monogram" viewBox="0 0 64 64" style="--team-primary:#3A4150;--team-secondary:#8A93A5;--team-on-primary:#FFFFFF;--team-chart:#8A93A5" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="32" r="31" fill="var(--team-primary)"/><circle cx="32" cy="32" r="28.5" fill="none" stroke="var(--team-secondary)" stroke-width="2"/><text x="32" y="33.5" text-anchor="middle" dominant-baseline="central" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif" font-weight="700" font-size="22" letter-spacing=".5" fill="var(--team-on-primary)">MC</text><circle cx="49" cy="49" r="11" fill="var(--team-secondary)"/><text x="49" y="50" text-anchor="middle" dominant-baseline="central" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif" font-weight="700" font-size="11" fill="var(--team-primary)">28</text></svg></span></div>
+      </div>
+      <div class="player-card-plate"><span class="plate-pos" title="Position">SG</span><span class="plate-team"><a class="player-card-team" href="../free-agency.html">Free Agent</a></span><span class="plate-meta muted">Age 24</span><span class="plate-ask" title="One-year asking salary — same model as the Free Agency board"><span>Asking price</span><strong>$1M</strong></span></div>
+      
+      
+      
+    </section>
+    <nav class="player-rail" aria-label="Player sections" data-player-rail><a class="rail-link" href="#overview">Overview</a><a class="rail-link" href="#ratings">Ratings</a><a class="rail-link" href="#contract">Contract &amp; Injuries</a></nav><div class="player-section" id="overview"><div class="overview-grid"><div class="ov-main">
+    <section class="card ratings-current">
+      <div class="section-title-row"><h2>Current Ratings</h2><span class="muted small-copy">green/red = vs last season</span></div>
+      <div class="rating-panel full-rating-panel">
+        <div class="rating-topline">
+          <div class="big-rating"><span>Overall</span><strong><span title="Change vs last season">41</span></strong></div>
+          <div class="big-rating"><span>Potential</span><strong><span title="Change vs last season">49</span></strong></div>
+        </div>
+        <div class="rating-groups">
+        <div class="rating-group">
+          <h3>Physical</h3>
+          
+            <div class="rating-row">
+              <span>Height</span>
+              <strong>46</strong>
+            </div>
+            
+            <div class="rating-row">
+              <span>Strength</span>
+              <strong>46</strong>
+            </div>
+            
+            <div class="rating-row">
+              <span>Speed</span>
+              <strong>49</strong>
+            </div>
+            
+            <div class="rating-row">
+              <span>Jumping</span>
+              <strong>48</strong>
+            </div>
+            
+            <div class="rating-row">
+              <span>Endurance</span>
+              <strong>37</strong>
+            </div>
+            
+        </div>
+        
+        <div class="rating-group">
+          <h3>Shooting</h3>
+          
+            <div class="rating-row">
+              <span>Inside</span>
+              <strong>41</strong>
+            </div>
+            
+            <div class="rating-row">
+              <span>Dunks/Layups</span>
+              <strong>45</strong>
+            </div>
+            
+            <div class="rating-row">
+              <span>Free Throws</span>
+              <strong>41</strong>
+            </div>
+            
+            <div class="rating-row">
+              <span>Mid Range</span>
+              <strong>41</strong>
+            </div>
+            
+            <div class="rating-row">
+              <span>Three Pointers</span>
+              <strong>43</strong>
+            </div>
+            
+        </div>
+        
+        <div class="rating-group">
+          <h3>Skill</h3>
+          
+            <div class="rating-row">
+              <span>Offensive IQ</span>
+              <strong>38</strong>
+            </div>
+            
+            <div class="rating-row">
+              <span>Defensive IQ</span>
+              <strong>41</strong>
+            </div>
+            
+            <div class="rating-row">
+              <span>Dribbling</span>
+              <strong>46</strong>
+            </div>
+            
+            <div class="rating-row">
+              <span>Passing</span>
+              <strong>44</strong>
+            </div>
+            
+            <div class="rating-row">
+              <span>Rebounding</span>
+              <strong>46</strong>
+            </div>
+            
+        </div>
+        </div>
+      </div>
+    </section>
+    
+    <section class="card">
+      <div class="section-title-row">
+        <h2>Development</h2>
+        <span class="muted small-copy"><span class="chart-key chart-key-ovr"></span> Overall · <span class="chart-key chart-key-pot"></span> Potential</span>
+      </div>
+      <svg viewBox="0 0 640 170" class="dev-chart" role="img" aria-label="Overall and potential by season">
+        <line x1="34" y1="120.5" x2="628" y2="120.5" class="chart-grid"/><text x="28" y="124.0" class="chart-tick" text-anchor="end">40</text><line x1="34" y1="78.0" x2="628" y2="78.0" class="chart-grid"/><text x="28" y="81.5" class="chart-tick" text-anchor="end">45</text><line x1="34" y1="35.5" x2="628" y2="35.5" class="chart-grid"/><text x="28" y="39.0" class="chart-tick" text-anchor="end">50</text><text x="34.0" y="162" class="chart-tick" text-anchor="middle">2026</text>
+        <polyline points="34.0,44.0" class="line-pot"/><circle cx="34.0" cy="44.0" r="3" class="line-pot-dot"><title>2026: 49</title></circle>
+        <polyline points="34.0,112.0" class="line-ovr"/><circle cx="34.0" cy="112.0" r="3" class="line-ovr-dot"><title>2026: 41</title></circle>
+      </svg>
+    </section>
+    </div><aside class="ov-side">
+    <section class="card player-bio">
+      <div class="section-title-row"><h2>Bio</h2></div>
+      <div class="details-grid"><div class="detail-item"><span>Team</span><strong><a href="../free-agency.html">FA</a></strong></div><div class="detail-item"><span>Position</span><strong>SG</strong></div><div class="detail-item"><span>Age</span><strong>24</strong></div><div class="detail-item"><span>Height</span><strong>6'6"</strong></div><div class="detail-item"><span>Weight</span><strong>212 lbs</strong></div><div class="detail-item"><span>Born</span><strong>2002 · Pennsylvania, USA</strong></div><div class="detail-item"><span>College</span><strong>Notre Dame</strong></div><div class="detail-item"><span>Draft</span><strong>2021 · Undrafted</strong></div><div class="detail-item"><span>Contract</span><strong>$1M/yr asking</strong></div><div class="detail-item"><span>Injury</span><strong><span class="healthy">Healthy</span></strong></div><div class="detail-item"><span>Mood</span><strong><span class="mood-chip" title="Values Fame">F</span></strong></div></div>
+    </section>
+    </aside></div></div><div class="player-section" id="ratings"><header class="psec-head"><h2>Ratings</h2></header>
+    <section class="card stats-section">
+      <div class="section-title-row"><h2>Season by Season</h2></div>
+      
+    
+    
+    <div class="table-wrap">
+      <table id="ratings-357" data-sortable>
+        <caption class="sr-only">Ratings 357</caption>
+        <thead><tr><th scope="col">Year</th><th scope="col">Pos</th><th scope="col" title="Current overall rating">Ovr</th><th scope="col" title="Potential rating ceiling">Pot</th><th scope="col">Height</th><th scope="col">Strength</th><th scope="col">Speed</th><th scope="col">Jumping</th><th scope="col">Endurance</th><th scope="col">Inside</th><th scope="col">Dunks/Layups</th><th scope="col">Free Throws</th><th scope="col">Mid Range</th><th scope="col">Three Pointers</th><th scope="col">Offensive IQ</th><th scope="col">Defensive IQ</th><th scope="col">Dribbling</th><th scope="col">Passing</th><th scope="col">Rebounding</th><th scope="col" title="Skill badges — tap a badge for its meaning">Skills</th></tr></thead>
+        <tbody>
+          <tr><td data-sort="2026">2026</td><td data-sort="SG">SG</td><td data-sort="41">41</td><td data-sort="49">49</td><td data-sort="46">46</td><td data-sort="46">46</td><td data-sort="49">49</td><td data-sort="48">48</td><td data-sort="37">37</td><td data-sort="41">41</td><td data-sort="45">45</td><td data-sort="41">41</td><td data-sort="41">41</td><td data-sort="43">43</td><td data-sort="38">38</td><td data-sort="41">41</td><td data-sort="46">46</td><td data-sort="44">44</td><td data-sort="46">46</td><td data-sort="">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+    
+    </section>
+    </div><div class="player-section" id="contract"><header class="psec-head"><h2>Contract &amp; Injuries</h2></header>
+    <section class="card compact-card">
+      <div class="section-title-row"><h2>Contract</h2></div>
+      <div class="vitals-row"><div class="vital-tile" title="One-year asking salary — same model as the Free Agency board"><span>Asking price</span><strong>$1M/yr</strong></div><div class="vital-tile"><span>Status</span><strong>Free agent</strong></div></div>
+    </section>
+    <div class="history-row"></div></div></div>
+  </main>
+  
+  <footer class="site-footer">
+    <nav class="footer-links" aria-label="Site map"><a href="../index.html">Home</a><a href="../schedule.html">Schedule</a><a href="../players/index.html">Players</a><a href="../free-agency.html">Free Agency</a><a href="../draft.html">Draft</a><a href="../history.html">History</a><a href="../records.html">Records</a><a href="../classics.html">Greatest Games</a><a href="../wrapped.html">Wrapped</a><a href="../trade.html">Trade Machine</a><a href="../compare.html">Compare</a><a href="../lineup.html">Lineup Lab</a><a href="../simulator.html">Win-Out Sim</a></nav>
+    <p class="footer-meta"><span>Season 2026 · Preseason</span><span class="footer-sep" aria-hidden="true">·</span><span>Generated from 2026_predraft.json</span></p>
+  </footer>
+
+  <script type="application/json" id="smp-config" data-team-colors>{"season":2026,"phase":0,"phaseLabel":"Preseason","teamColors":{"0":{"primary":"#4A3B5C","secondary":"#C13B33","chart":"#9966CC","on":"#FFFFFF","abbrev":"ROC","name":"Rochester Dragons","url":"teams/rochester-dragons-0.html"},"1":{"primary":"#1E4230","secondary":"#E8B321","chart":"#8B5E34","on":"#FFFFFF","abbrev":"WAL","name":"Waltham Bears","url":"teams/waltham-bears-1.html"},"2":{"primary":"#2C5545","secondary":"#EAE4C8","chart":"#2F8C57","on":"#FFFFFF","abbrev":"CAM","name":"Cambridge Platypuses","url":"teams/cambridge-platypuses-2.html"},"3":{"primary":"#1B2440","secondary":"#E0531F","chart":"#E0531F","on":"#FFFFFF","abbrev":"DUR","name":"Durham Destroyers","url":"teams/durham-destroyers-3.html"},"4":{"primary":"#1D4F91","secondary":"#6FA8DC","chart":"#4C8CE0","on":"#FFFFFF","abbrev":"TOR","name":"Toronto Jays","url":"teams/toronto-jays-4.html"},"5":{"primary":"#232F55","secondary":"#FFC72C","chart":"#FFD23F","on":"#FFFFFF","abbrev":"ITH","name":"Ithaca Thunder","url":"teams/ithaca-thunder-5.html"},"6":{"primary":"#1F2E4E","secondary":"#F2A900","chart":"#56719F","on":"#FFFFFF","abbrev":"GOO","name":"Gooning Gooners","url":"teams/gooning-gooners-6.html"},"7":{"primary":"#1C3557","secondary":"#C8102E","chart":"#D22B3E","on":"#FFFFFF","abbrev":"MAN","name":"Manhattan Elephants","url":"teams/manhattan-elephants-7.html"},"8":{"primary":"#1C5E52","secondary":"#2FA98C","chart":"#2FA98C","on":"#FFFFFF","abbrev":"STO","name":"Stony Brook Stingrays","url":"teams/stony-brook-stingrays-8.html"},"9":{"primary":"#23305A","secondary":"#F58426","chart":"#E4950C","on":"#FFFFFF","abbrev":"QUE","name":"Queens Pigeons","url":"teams/queens-pigeons-9.html"}},"pages":[{"label":"Home","url":"index.html","key":"home"},{"label":"Schedule","url":"schedule.html","key":"schedule"},{"label":"Players","url":"players/index.html","key":"players"},{"label":"Free Agency","url":"free-agency.html","key":"free-agency"},{"label":"Draft","url":"draft.html","key":"draft"},{"label":"History","url":"history.html","key":"history"},{"label":"Records","url":"records.html","key":"records"},{"label":"Greatest Games","url":"classics.html","key":"classics"},{"label":"Wrapped","url":"wrapped.html","key":"wrapped"},{"label":"Trade Machine","url":"trade.html","key":"trade"},{"label":"Compare","url":"compare.html","key":"compare"},{"label":"Lineup Lab","url":"lineup.html","key":"lineup"},{"label":"Win-Out Sim","url":"simulator.html","key":"simulator"}],"skills":{"3":"Three-point shooter","A":"Athlete","B":"Ball handler","Di":"Interior defender","Dp":"Perimeter defender","Po":"Post scorer","Ps":"Passer","R":"Rebounder","V":"Volume scorer"}}</script>
+</body>
+</html>

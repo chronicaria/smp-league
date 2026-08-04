@@ -17,6 +17,7 @@ from .core import (
     esc,
     fmt_money,
     fmt_number,
+    get_attr_value,
     latest_rating,
     latest_team_season,
     player_link,
@@ -30,8 +31,12 @@ from .core import (
 
 
 def team_finances_table(roster: list[dict[str, Any]], season: int, data: dict[str, Any] | None = None, tid: int | None = None) -> str:
-    highlight_season = season + 1
-    seasons = list(range(season + 1, season + 6))  # upcoming five seasons (drop the finished one)
+    # Window on the contract horizon starting with the CURRENT season. The old
+    # window started at season + 1 ("drop the finished one"), which was right for a
+    # mid-season export of a league with history but blanks out every expiring deal
+    # in year one, when the current season hasn't been played yet.
+    highlight_season = season
+    seasons = list(range(season, season + 5))
     players = sorted(
         roster,
         key=lambda p: (-safe_float((p.get("contract") or {}).get("amount"), 0.0), player_name(p)),
@@ -141,51 +146,67 @@ def team_finances_table(roster: list[dict[str, Any]], season: int, data: dict[st
 
 
 # ---------- league finance model ----------
-# All amounts in Basketball GM "thousands" units (300000 == $300M). No hard cap.
+# All amounts in Basketball GM "thousands" units (100000 == $100M).
 # There is NO league share and NO carried cash: every dollar is earned on the
 # court, and each season's net revenue IS the team's budget for the next season.
-# Derivation: 225 league wins/season -> league-average net revenue =
-# (225*12.8 + 4*15 + 2*15 + 20)/10 = exactly $299.0M, sitting just under the
-# $300M soft cap (luxury tax and trade cash net to zero league-wide).
-FIN_PER_WIN = 12800     # +$12.8M per regular-season win
-FIN_PLAYOFF = 15000     # +$15M for a playoff berth (clinch-gated)
-FIN_FINALS = 15000      # +$15M for a finals berth (clinch-gated)
-FIN_CHAMP = 20000       # +$20M for the championship (bonuses stack: champion banks 15+15+20=$50M)
-FIN_SOFT_CAP = 300000   # soft cap: $1 luxury tax per $1 of payroll over $300M
+#
+# SMP II derivation. A 36-game season across 10 teams is 180 league wins (down from
+# SMP I's 225 at 45 games), and the cap fell from $300M to $100M, so every constant
+# below is re-solved rather than rescaled:
+#   (180*5.3 + 4*5 + 2*5 + 7) / 10 = $99.1M league-average net revenue,
+# sitting just under the $100M cap exactly as the old model sat under $300M.
+# The playoff field is now 4 teams (numGamesPlayoffSeries [5,5]), so the bonus
+# multipliers are 4 berths / 2 finalists / 1 champion.
+FIN_PER_WIN = 5300      # +$5.3M per regular-season win
+FIN_PLAYOFF = 5000      # +$5M for a playoff berth (clinch-gated)
+FIN_FINALS = 5000       # +$5M for a finals berth (clinch-gated)
+FIN_CHAMP = 7000        # +$7M for the championship (bonuses stack: champion banks 5+5+7=$17M)
+
+# SMP II runs a HARD cap. There is no luxury tax and no tax redistribution: the
+# engine refuses any signing or trade that would cross the line (salaryCapType
+# "hard"), so a tax bracket above the cap is unreachable by construction. The old
+# luxtax/pool/share model was deleted rather than rescaled.
+FIN_CAP = 100000        # $100M hard cap -- fallback only; league_cap() reads the export
+FIN_SOFT_CAP = FIN_CAP  # ponytail: import alias for pages/lineup.py; drop once it reads FIN_CAP
+
+
+def league_cap(data: dict[str, Any] | None, season: int | None = None) -> float:
+    """The salary cap for ``season``, read from ``gameAttributes.salaryCap``.
+
+    Read from the export so the site can never disagree with the league file the
+    group actually plays; ``FIN_CAP`` is only the fallback for a file without one.
+    """
+    ga = (data or {}).get("gameAttributes") or {}
+    cap = safe_float(get_attr_value(ga.get("salaryCap"), season), 0.0)
+    return cap if cap > 0 else float(FIN_CAP)
+
+
+def league_cap_type(data: dict[str, Any] | None, season: int | None = None) -> str:
+    """``"hard"`` or ``"soft"`` from the export, so pages can branch on the rule."""
+    ga = (data or {}).get("gameAttributes") or {}
+    value = get_attr_value(ga.get("salaryCapType"), season)
+    return str(value) if value else "hard"
+
 
 # Manual cash adjustments outside the auto-computed ledger (thousands), keyed by
 # season -> tid. Cash that changes hands in a trade, since BBGM exports don't record
 # it. Signed: negative = cash out, positive = cash in; each season's entries must net
 # to zero. ponytail: hand-maintained; add rows as trades happen.
 FIN_ADJUSTMENTS: dict[int, dict[int, dict[str, Any]]] = {
-    2030: {
-        2: {"amount": -1000, "note": "Cash to Waltham (trade)"},    # Cambridge Platypuses
-        6: {"amount":  1000, "note": "Cash from Cambridge (trade)"},  # Waltham Bears
-    },
-    2031: {
-        3: {"amount": -25000, "note": "Trae Young trade"},                        # Queens Pigeons
-        5: {"amount":  -5000, "note": "Darryn Peterson trade / Trae Young trade"},  # Gooning Gooners (-30M +25M)
-        6: {"amount":  30000, "note": "Darryn Peterson trade"},                   # Waltham Bears
-    },
+    # Empty for SMP II. The SMP I rows (2030-2031) referenced a league that no longer
+    # exists; add new rows as cash actually changes hands.
 }
 
 # Salary retained in a trade: the original team keeps paying part of a traded player's
 # salary while the player sits on the new roster at full contract. BBGM exports don't
 # record retention, so we move the retained share (thousands/yr) off the roster team's
-# books onto the payer's — for payroll, luxury tax, and the salaries table — every season
+# books onto the payer's — for payroll, cap room, and the salaries table — every season
 # through the contract's exp. Keyed by pid. ponytail: hand-maintained; add rows as trades happen.
 FIN_RETENTION: dict[int, dict[str, Any]] = {
-    # (Cody Williams pid 1789 was waived to free agency in the 2031 offseason, so Waltham's
-    # old $17M retention no longer applies — that entry was removed.)
-    # 2031 trade: Ajay Mitchell + Trae Young to the Gooners with Waltham paying them in FULL,
-    # so the retained share equals each contract and the Gooners carry $0 for both.
-    # (Trae Young pid 1325 was flipped to Queens on day 3; the retention did NOT follow him,
-    # so Queens carries his full $18M and Waltham's entry was removed.)
-    1765: {"held_by": 6, "amount": 21000, "note": "Waltham (trade)"},  # Ajay Mitchell (roster tid 5)
+    # Empty for SMP II. The SMP I entries were keyed by raw pid, and those pids belong
+    # to players that no longer exist in the league file -- carrying them forward would
+    # have silently charged retention against whichever new player inherited the id.
 }
-
-# The 2031 waivers, rookie repricing, and trades are now materialized in the
-# canonical export. Site generation treats that file as authoritative.
 
 
 def team_retention_delta(tid: int, season: int) -> float:
@@ -210,7 +231,26 @@ def team_retention_delta(tid: int, season: int) -> float:
     return delta
 
 
-FIN_FINALS_GAMES_TO_WIN = 4  # ponytail: best-of-7 finals (this league); read games-to-win if the format changes
+def finals_games_to_win(data: dict[str, Any], season: int | None = None) -> int:
+    """Wins that clinch the Finals series in ``season``.
+
+    Derived from ``gameAttributes.numGamesPlayoffSeries`` (the last round is the
+    Finals): SMP II is [5, 5], so three wins take the title, where SMP I's [7, 7]
+    needed four. Hardcoding this is how the championship bonus silently stops being
+    paid after a format change, so the export is the source of truth; the retained
+    playoff game rows are the fallback, and a best-of-7 the last resort.
+    """
+    ga = (data or {}).get("gameAttributes") or {}
+    lengths = get_attr_value(ga.get("numGamesPlayoffSeries"), season)
+    if isinstance(lengths, list) and lengths:
+        best_of = safe_int(lengths[-1], 0)
+        if best_of > 0:
+            return best_of // 2 + 1
+    for game in ((data or {}).get("games") or []):
+        if (game.get("playoffs") and game.get("numGamesToWinSeries") is not None
+                and (season is None or safe_int(game.get("season"), -1) == season)):
+            return max(1, safe_int(game.get("numGamesToWinSeries"), 4))
+    return 4
 
 
 def playoff_status(data: dict[str, Any], tid: int, season: int) -> tuple[bool, bool, bool]:
@@ -243,10 +283,11 @@ def playoff_status(data: dict[str, Any], tid: int, season: int) -> tuple[bool, b
     if len(rounds) >= expected_rounds:
         finals = matchups(rounds[expected_rounds - 1])
         made_finals = any(in_matchup(m) for m in finals)
+        clinch = finals_games_to_win(data, season)
         for m in finals:
             home, away = m.get("home") or {}, m.get("away") or {}
             hw, aw = safe_int(home.get("won")), safe_int(away.get("won"))
-            if max(hw, aw) < FIN_FINALS_GAMES_TO_WIN:
+            if max(hw, aw) < clinch:
                 continue  # Finals series not clinched yet
             winner = safe_int(home.get("tid")) if hw > aw else safe_int(away.get("tid"))
             if winner == tid:
@@ -274,18 +315,21 @@ def team_dead_money(data: dict[str, Any] | None, tid: int, season: int) -> float
 def compute_league_finances(data: dict[str, Any], teams: list[dict[str, Any]], players: list[dict[str, Any]], season: int, odds: dict[int, dict[str, Any]] | None = None) -> dict[str, Any]:
     """Per-team revenue ledger for the season, recomputed each build from game results.
 
-    Returns ``{"teams": {tid: ledger}, "pool", "share", "n_under", "soft_cap"}``.
+    Returns ``{"teams": {tid: ledger}, "cap", "cap_type"}``.
     There is no league share and no carried cash: revenue (win payouts +
-    clinch-gated bonuses + trade adjustments) minus luxury tax plus the
-    under-cap tax share is the team's NET REVENUE — its whole budget for next
-    season. Extra keys:
-    ``season_balance_*`` (net revenue minus this season's payroll, ~$0 league-wide),
+    clinch-gated bonuses + trade adjustments) IS the team's NET REVENUE — its
+    whole budget for next season. Under a hard cap there is no luxury tax to net
+    out and no tax pool to redistribute. Extra keys:
+    ``cap_room`` (cap minus payroll) and ``over_cap``, which can only be true on a
+    god-mode-edited roster because the engine blocks any move past the line;
+    ``season_balance_*`` (net revenue minus this season's payroll),
     ``committed_next`` (next season's payroll incl. dead money/retention) and
     ``surplus_next`` (projected net revenue minus committed_next; negative means
     the team must shed salary). "Projected" figures use the 10k-sim projected wins
     and the expected value of the playoff bonuses (prob-weighted).
     """
     odds = odds or {}
+    cap = league_cap(data, season)
     fin: dict[int, dict[str, Any]] = {}
     for team in teams:
         tid = safe_int(team.get("tid"), -99)
@@ -295,14 +339,13 @@ def compute_league_finances(data: dict[str, Any], teams: list[dict[str, Any]], p
         dead = team_dead_money(data, tid, season)
         retained = team_retention_delta(tid, season)  # traded-away salary kept on the books
         payroll = team_payroll(roster, season) + dead + retained  # waived + retained still get paid
-        # Full next-season commitment (roster + dead money + retained) — matches the Owed Payroll
-        # table's committed-salary total, so "available to spend" nets out every 2031 obligation.
+        # Full next-season commitment (roster + dead money + retained) — matches the Salaries
+        # table's committed-salary total, so "available to spend" nets out every obligation.
         payroll_next = (team_payroll(roster, season + 1)
                         + team_dead_money(data, tid, season + 1)
                         + team_retention_delta(tid, season + 1))
         ts = latest_team_season(team, season)
         won, lost = safe_int(ts.get("won"), 0), safe_int(ts.get("lost"), 0)
-        luxtax = max(0.0, payroll - FIN_SOFT_CAP)
         made_po, made_finals, won_champ = playoff_status(data, tid, season)
         earned_playoff = (FIN_PLAYOFF if made_po else 0) + (FIN_FINALS if made_finals else 0) + (FIN_CHAMP if won_champ else 0)
         o = odds.get(tid) or {}
@@ -314,33 +357,27 @@ def compute_league_finances(data: dict[str, Any], teams: list[dict[str, Any]], p
         fin[tid] = {
             "adj": adj, "adj_note": adj_info.get("note", ""),
             "payroll": payroll, "committed_next": payroll_next, "dead": dead, "retained": retained, "won": won, "lost": lost,
-            "luxtax": luxtax, "tax_now": luxtax, "tax_proj": luxtax,
-            "under_cap": payroll < FIN_SOFT_CAP, "over_cap": payroll > FIN_SOFT_CAP,
+            # Hard-cap facts. over_cap can only be true on a god-mode-edited roster:
+            # the engine refuses any signing or trade that would cross the line, so
+            # this is a "something is wrong with this export" flag, not a tax bracket.
+            "cap": cap, "cap_room": cap - payroll, "over_cap": payroll > cap,
             "win_rev_now": FIN_PER_WIN * won, "win_rev_proj": FIN_PER_WIN * proj_w,
             "earned_playoff": earned_playoff, "proj_playoff": proj_playoff,
             "proj_w": proj_w, "po": po_p, "finals": fin_p, "champ": champ_p,
             "revenue_now": FIN_PER_WIN * won + earned_playoff + adj,
             "revenue_proj": FIN_PER_WIN * proj_w + proj_playoff + adj,
         }
-    pool = sum(f["luxtax"] for f in fin.values())
-    under = [t for t, f in fin.items() if f["under_cap"]]
-    share = pool / len(under) if under else 0.0
     for tid, f in fin.items():
-        f["tax_share_in"] = f["tax_share"] = share if f["under_cap"] else 0.0
-        # Net revenue = the team's whole budget for next season (no carried cash).
-        f["net_revenue_now"] = f["revenue_now"] - f["luxtax"] + f["tax_share_in"]
-        f["net_revenue_proj"] = f["revenue_proj"] - f["luxtax"] + f["tax_share_in"]
-        # Sanity line: net revenue vs this season's payroll (league-average ~ +$16M).
+        # Net revenue = the team's whole budget for next season. Nothing is netted
+        # out of it: no carried cash, and no luxury tax under a hard cap.
+        f["net_revenue_now"] = f["revenue_now"]
+        f["net_revenue_proj"] = f["revenue_proj"]
+        # Sanity line: net revenue vs this season's payroll.
         f["season_balance_now"] = f["net_revenue_now"] - f["payroll"]
         f["season_balance_proj"] = f["net_revenue_proj"] - f["payroll"]
         # Budget left after next season's already-committed salaries are paid.
         f["surplus_next"] = f["net_revenue_proj"] - f["committed_next"]
-        # Legacy aliases (home.py finance table reads these).
-        f["cash_now"] = f["net_revenue_now"]
-        f["cash_proj"] = f["net_revenue_proj"]
-        f["payroll_next"] = f["committed_next"]
-        f["avail"] = f["surplus_next"]
-    return {"teams": fin, "pool": pool, "share": share, "n_under": len(under), "soft_cap": FIN_SOFT_CAP}
+    return {"teams": fin, "cap": cap, "cap_type": league_cap_type(data, season)}
 
 
 def fmt_money_pm(amount: Any) -> str:

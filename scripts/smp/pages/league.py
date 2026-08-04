@@ -1,16 +1,9 @@
 from __future__ import annotations
 
-import argparse
-import html
 import json
-import random
 import math
-import re
-import shutil
-import unicodedata
 from collections import defaultdict
-from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from ..core import (
     ALL_PLAYERS_BY_PID,
@@ -28,6 +21,7 @@ from ..core import (
     combine_stat_rows,
     completed_game_items,
     compose_event_html,
+    current_season,
     draft_prospects,
     efg_pct,
     esc,
@@ -58,6 +52,7 @@ from ..core import (
     player_name,
     player_url,
     rating_delta_html,
+    regular_season_length,
     safe_float,
     safe_int,
     schedule_matchup_label,
@@ -131,6 +126,12 @@ def _portrait_safe(player: dict[str, Any], cls: str, root: str = "", size: int =
             f'<span class="{esc(cls)} portrait-monogram" role="img" '
             f'aria-label="{esc(player_name(player))}">{mono}</span>'
         )
+
+
+def league_start_season(data: dict[str, Any]) -> int:
+    """Year one of the league, from gameAttributes rather than a hardcoded year."""
+    start = safe_int((data.get("gameAttributes") or {}).get("startingSeason"))
+    return start or current_season(data)
 
 
 def champions_by_season(data: dict[str, Any]) -> dict[int, int]:
@@ -337,18 +338,32 @@ def rafters_strip_html(data: dict[str, Any], teams: list[dict[str, Any]]) -> str
 
 
 def fa_asking_price(player: dict[str, Any], season: int) -> float:
-    """Starting bid in BBGM thousands: a released player (Gooners waive) asks their
-    current contract price; everyone else asks the model's 1-year annual value."""
-    override = player.get("_fa_bid")
-    if override is not None:
-        return safe_float(override)
+    """Starting bid in BBGM thousands: the model's annual value on a one-year deal."""
     rating = latest_rating(player, season)
     born = (player.get("born") or {}).get("year")
     age_val = (season - born) if isinstance(born, int) else 25
     return fa_salary_by_length(safe_int(rating.get("ovr")), safe_int(rating.get("pot")), age_val)[0] * 1000
 
 
-def free_agent_row(player: dict[str, Any], season: int, root: str, rating_ranges: dict[str, tuple[float, float]]) -> str:
+def fa_market_is_priced(bids: list[float]) -> bool:
+    """Does the salary model actually separate this free-agent pool?
+
+    A column of identical dollar values is worse than no column, so this gates the
+    Starting Bid display. The old test was "fewer than half the market shares the
+    cheapest ask" -- but in SMP II 496 players compete for 120 jobs, so ~61% of the
+    pool sits at the league minimum for a real economic reason, not a calibration
+    failure. That test hid a correctly-priced column permanently.
+
+    What actually matters is whether the model distinguishes anyone: if the top of
+    the market is separated from the floor, the column carries information even when
+    the long tail is bunched at the minimum.
+    """
+    if not bids:
+        return False
+    return len({round(bid, 6) for bid in bids}) > 1
+
+
+def free_agent_row(player: dict[str, Any], season: int, root: str, rating_ranges: dict[str, tuple[float, float]], show_bid: bool = True) -> str:
     rating = latest_rating(player, season)
     born = (player.get("born") or {}).get("year")
     cells = [
@@ -358,8 +373,9 @@ def free_agent_row(player: dict[str, Any], season: int, root: str, rating_ranges
         td(esc(rating.get("ovr") if rating.get("ovr") is not None else "—"), sort=rating.get("ovr")),
         td(esc(rating.get("pot") if rating.get("pot") is not None else "—"), sort=rating.get("pot")),
     ]
-    bid_k = fa_asking_price(player, season)
-    cells.append(td(fmt_money(bid_k), sort=bid_k, cls="group-start"))
+    if show_bid:
+        bid_k = fa_asking_price(player, season)
+        cells.append(td(fmt_money(bid_k), sort=bid_k, cls="group-start"))
     for key, _ in TEAM_RATING_RANK_KEYS:
         value = rating.get(key)
         lo, hi = rating_ranges.get(key, (0.0, 0.0))
@@ -386,41 +402,57 @@ def render_free_agency_page(players: list[dict[str, Any]], teams: list[dict[str,
                 values.append(float(value))
         rating_ranges[key] = (min(values), max(values)) if values else (0.0, 0.0)
 
-    headers: list = ["Name", "Pos", "Age", "Ovr", "Pot", ("Starting Bid", "group-start")]
+    show_bids = fa_market_is_priced([fa_asking_price(p, season) for p in sorted_players])
+
+    headers: list = ["Name", "Pos", "Age", "Ovr", "Pot"]
+    if show_bids:
+        headers.append(("Starting Bid", "group-start"))
     for key, label in TEAM_RATING_RANK_KEYS:
         headers.append((label, "group-start" if key in RATING_GROUP_STARTS else ""))
-    rows = [free_agent_row(p, season, "", rating_ranges) for p in sorted_players]
+    rows = [free_agent_row(p, season, "", rating_ranges, show_bid=show_bids) for p in sorted_players]
 
     fa_cards = []
     for rank, p in enumerate(sorted_players[:10], 1):
         rating = latest_rating(p, season)
-        bid_k = fa_asking_price(p, season)
         meta_bits = [rating.get("pos") or "—", f"{age(p, season)} yr",
                      f"{rating.get('ovr', '—')} ovr / {rating.get('pot', '—')} pot"]
+        ask_chip = ""
+        if show_bids:
+            ask_chip = (f'<span class="fa-card-ask" title="Starting bid: annual value of a one-year deal">'
+                        f'{fmt_money(fa_asking_price(p, season))}</span>')
         fa_cards.append(
             f'<a class="fa-card" href="{player_url(p)}">'
             f'<span class="fa-card-rank" aria-hidden="true">{rank}</span>'
             f'{_portrait_safe(p, "fa-card-portrait", root="", size=56)}'
             f'<span class="fa-card-name">{esc(player_name(p))}</span>'
             f'<span class="fa-card-meta">{esc(" · ".join(str(b) for b in meta_bits))}</span>'
-            f'<span class="fa-card-ask" title="Starting bid: annual value of a one-year deal">{fmt_money(bid_k)}</span>'
+            f'{ask_chip}'
             f'</a>'
         )
     fa_card_strip = ""
     if fa_cards:
+        strip_note = "best available by overall · chip = asking price" if show_bids else "best available by overall"
         fa_card_strip = f"""
     <section class="card">
-      <div class="section-title-row"><h2>Top of the Market</h2><span class="muted small-copy">best available by overall · chip = asking price</span></div>
+      <div class="section-title-row"><h2>Top of the Market</h2><span class="muted small-copy">{strip_note}</span></div>
       <div class="fa-card-strip">{''.join(fa_cards)}</div>
     </section>
     """
 
+    # With every ask clamped to the same minimum, a Starting Bid column is a wall of one
+    # number, so the page says why it is missing instead of printing a false precision.
+    hero_note = (
+        "Starting bid is the annual value of a one-year deal, set by overall, potential, and age."
+        if show_bids else
+        "Ranked by overall. Asking prices are held back this year — the salary model still puts most of "
+        "this market at the league minimum, so a bid column would print one number down the whole board."
+    )
     body = f"""
     <section class="page-hero">
       <div>
         <p class="eyebrow">Free Agency</p>
         <h1>{market_year} Free Agents</h1>
-        <p class="muted">Starting bid is the annual value of a one-year deal, set by overall, potential, and age.</p>
+        <p class="muted">{hero_note}</p>
       </div>
     </section>
     {fa_card_strip}
@@ -440,10 +472,7 @@ def render_players_index(players: list[dict[str, Any]], teams: list[dict[str, An
     rostered = [p for p in players if isinstance(p.get("tid"), int) and p.get("tid") >= 0]
     sorted_players = sorted(rostered, key=lambda p: (p.get("tid", 999), -safe_int(latest_rating(p, season).get("ovr")), player_name(p)))
     fa_players = sorted(
-        # Match the free-agency page: hide scrub FAs below 50 ovr or 50 pot.
-        [p for p in players if p.get("tid") == FREE_AGENT_TID
-         and safe_int(latest_rating(p, season).get("ovr")) >= 50
-         and safe_int(latest_rating(p, season).get("pot")) >= 50],
+        [p for p in players if p.get("tid") == FREE_AGENT_TID],
         key=lambda p: (-safe_int(latest_rating(p, season).get("ovr")), -safe_int(latest_rating(p, season).get("pot")), player_name(p)),
     )
     prospects = sorted(
@@ -578,7 +607,12 @@ def render_players_index(players: list[dict[str, Any]], teams: list[dict[str, An
         "teams": [{"abbrev": abbrev, "color": color} for abbrev, color in team_colors.items()],
         "players": chart_players,
     }
-    payload_json = json.dumps(payload, separators=(",", ":")).replace("</", "<\/")
+    payload_json = json.dumps(payload, separators=(",", ":")).replace("</", "<\\/")
+
+    # The scatter's Min GP floor tracks the season: a literal 36 was 80% of a 45-game year
+    # but is a perfect-attendance bar in a 36-game one.
+    season_games = regular_season_length(data, season) if data else 0
+    chart_min_gp = max(5, round(0.55 * season_games)) if season_games else 20
 
     def metric_options(selected: str) -> str:
         return "".join(
@@ -609,7 +643,7 @@ def render_players_index(players: list[dict[str, Any]], teams: list[dict[str, An
             <input type="number" data-chart-minmin value="0" min="0" max="48" step="2">
           </label>
           <label class="select-label">Min GP
-            <input type="number" data-chart-mingp value="36" min="0" step="1">
+            <input type="number" data-chart-mingp value="{chart_min_gp}" min="0" step="1">
           </label>
           <label class="select-label check-label">Labels
             <input type="checkbox" data-chart-labels checked>
@@ -1003,10 +1037,13 @@ def playoff_bracket_html(ps: dict[str, Any], teams_by_tid: dict[int, dict[str, A
 
 
 def past_season_leaders_html(data: dict[str, Any], season: int, all_players_by_pid: dict[int, dict[str, Any]], teams_by_tid: dict[int, dict[str, Any]], root: str, led: dict[int, dict[str, float]] | None = None) -> str:
+    # Qualify on a share of the season, not a flat 20 games: that was 44% of a 45-game
+    # year and would be 56% of a 36-game one.
+    min_gp = max(5, round(0.45 * regular_season_length(data, season)))
     rows = []
     for player in data.get("players", []):
         stat = season_regular_stat(player, season)
-        if stat_gp(stat) >= 20:
+        if stat_gp(stat) >= min_gp:
             rows.append((player, stat))
     if not rows:
         return ""
@@ -1067,8 +1104,8 @@ def _odds_pct(pct: float) -> str:
 def projected_lottery_html(data: dict[str, Any], teams: list[dict[str, Any]], season: int, draft_year: int) -> str:
     palette = team_palette_by_tid(teams)
     teams_by_tid = {int(t.get("tid")): t for t in teams if t.get("tid") is not None}
-    order = standings_order(active_teams_for_season(teams, season), season)
-    reverse_order = list(reversed(order))
+    active = active_teams_for_season(teams, season)
+    order = standings_order(active, season)
     # Simulated slot odds apply only to the upcoming draft (this season's finish).
     slot_odds: dict[int, tuple[float, float]] = {}
     if draft_year == season:
@@ -1080,6 +1117,17 @@ def projected_lottery_html(data: dict[str, Any], teams: list[dict[str, Any]], se
                 p1 = seeds[n - 1]
                 top3 = sum(seeds[n - 3:])
                 slot_odds[tid] = (100 * p1, 100 * top3)
+
+    # Before any games are played every team is 0-0, so standings_order falls back to an
+    # arbitrary tiebreak and the slot column ends up contradicting the odds column beside
+    # it (measured in preseason: the team slotted 2nd held the league's *lowest* #1 odds).
+    # With no results to reverse, the projection the page actually believes is the sim, so
+    # order by it instead -- worst projected team picks first.
+    # `order` runs best team first (reverse_order below is the pick order), and the best
+    # team is the one least likely to land the #1 slot -- so sort ascending by those odds.
+    if slot_odds and not any(safe_int((latest_team_season(t, season) or {}).get("gp")) for t in active):
+        order = sorted(order, key=lambda tid: slot_odds.get(tid, (0.0, 0.0))[0])
+    reverse_order = list(reversed(order))
     picks = [dp for dp in data.get("draftPicks", []) if isinstance(dp, dict) and dp.get("season") == draft_year]
     owner_by_slot: dict[tuple[int, int], int] = {}
     for dp in picks:
@@ -1372,12 +1420,19 @@ _TX_FILTER_BUTTONS = [
 def transactions_archive_html(data: dict[str, Any], teams: list[dict[str, Any]]) -> str:
     teams_by_tid = {int(t.get("tid")): t for t in teams if t.get("tid") is not None}
     all_players_by_pid = {safe_int(p.get("pid")): p for p in data.get("players", []) if p.get("pid") is not None}
+    # The inaugural fantasy draft only seeded rosters — a pick per roster spot, league-wide —
+    # so it is archive noise. A rookie draft is two rounds, which separates the two without
+    # hardcoding the season they happen to share.
+    draft_counts: dict[int, int] = defaultdict(int)
+    for event in data.get("events", []):
+        if event.get("type") == "draft" and isinstance(event.get("season"), int):
+            draft_counts[event["season"]] += 1
+    seeding_seasons = {yr for yr, count in draft_counts.items() if count > 2 * len(teams_by_tid)}
     by_season: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for event in data.get("events", []):
         if event.get("type") not in _TX_TYPES or not isinstance(event.get("season"), int):
             continue
-        # The 2026 inaugural fantasy draft only seeded rosters (1,500+ events) — skip it.
-        if event.get("type") == "draft" and event.get("season") == 2026:
+        if event.get("type") == "draft" and event["season"] in seeding_seasons:
             continue
         by_season[event["season"]].append(event)
     if not by_season:
@@ -1502,7 +1557,8 @@ def render_history_page(data: dict[str, Any], teams: list[dict[str, Any]]) -> st
     return page_html("History", body, teams, root="", active="history")
 
 
-def all_time_leaders_html(data: dict[str, Any], teams: list[dict[str, Any]], root: str = "", start_season: int = 2026) -> str:
+def all_time_leaders_html(data: dict[str, Any], teams: list[dict[str, Any]], root: str = "", start_season: int | None = None) -> str:
+    start_season = start_season if start_season is not None else league_start_season(data)
     all_players_by_pid = {safe_int(p.get("pid")): p for p in data.get("players", []) if p.get("pid") is not None}
     totals = []
     for player in data.get("players", []):
@@ -1553,8 +1609,9 @@ def all_time_leaders_html(data: dict[str, Any], teams: list[dict[str, Any]], roo
         ("Steals", lambda s: s.get("stl")),
         ("Blocks", lambda s: s.get("blk")),
     ]
-    # Per-game boards re-rank with a modest floor so 5-game cameos don't lead.
-    pg_min_gp = 40
+    # Per-game boards re-rank with a modest floor so short cameos don't lead. The floor is a
+    # share of one season, not a literal: a flat 40 can never be reached in a 36-game year.
+    pg_min_gp = max(5, round(0.6 * regular_season_length(data, current_season(data))))
     totals_boxes = "".join(box(f"Career {label}", fn) for label, fn in categories)
     pg_boxes = "".join(box(f"{label} Per Game", fn, digits=1, per_game=True, min_gp=pg_min_gp) for label, fn in categories)
     return f"""
@@ -1617,7 +1674,8 @@ def feat_rank(stats: dict[str, Any]) -> int:
     return 10
 
 
-def render_records_page(data: dict[str, Any], teams: list[dict[str, Any]], season: int, start_season: int = 2026) -> str:
+def render_records_page(data: dict[str, Any], teams: list[dict[str, Any]], season: int, start_season: int | None = None) -> str:
+    start_season = start_season if start_season is not None else league_start_season(data)
     teams_by_tid = {int(t.get("tid")): t for t in teams if t.get("tid") is not None}
     all_players_by_pid = {safe_int(p.get("pid")): p for p in data.get("players", []) if p.get("pid") is not None}
     current_gids = {str(g.get("gid")) for g in data.get("games", []) if g.get("season") == season}

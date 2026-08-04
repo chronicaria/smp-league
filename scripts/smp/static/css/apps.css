@@ -138,7 +138,7 @@
 }
 .tproj-note { font-size: .74rem; }
 
-/* trade finance readout: payroll before/after vs the $300M tax line */
+/* trade finance readout: payroll before/after vs the hard-cap line */
 .tfin { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin: .55rem 0; }
 @media (max-width: 900px) { .tfin { grid-template-columns: 1fr; } }
 .tfin-team {

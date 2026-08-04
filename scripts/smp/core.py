@@ -12,7 +12,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
-from .identity import team_identity
+from .identity import chart_palette, register_team_identities, team_chart_color, team_identity
 
 FREE_AGENT_TID = -1
 DRAFT_PROSPECT_TID = -2
@@ -77,10 +77,10 @@ SCATTER_METRICS = [
     ("age", "Age"), ("ovr", "Ovr"), ("pot", "Pot"),
 ]
 
-TEAM_PALETTE = [
-    "#5b9dff", "#ff7e67", "#3fbf72", "#f2c14e", "#b78aff",
-    "#4fd8d2", "#ff8ad4", "#c0d860", "#ff9f40", "#9aa7ff",
-]
+# Every team color on the site comes from identity.py. This is that table's chart
+# colors in abbrev order, for the charts that index a palette by a team's position
+# in an abbrev-sorted list instead of by tid.
+TEAM_PALETTE = chart_palette()
 
 # Set by generate_site; used for footers and page chrome.
 SITE_META: dict[str, Any] = {"season": None, "day": None}
@@ -180,12 +180,16 @@ def register_site_meta(data: dict[str, Any], export_name: str | None = None) -> 
 
 
 def team_palette_by_tid(teams: list[dict[str, Any]]) -> dict[int, str]:
-    """Stable distinct color per team (the JSON's own colors are not distinct)."""
-    ordered = sorted(
-        (t for t in teams if t.get("tid") is not None and not t.get("disabled")),
-        key=lambda t: team_abbrev(t),
-    )
-    return {int(t["tid"]): TEAM_PALETTE[i % len(TEAM_PALETTE)] for i, t in enumerate(ordered)}
+    """Chart color per team, straight from the identity registry.
+
+    The JSON's own colors are not distinct enough to chart with, so the curated
+    identity colors are the ones every dot, bar and series uses.
+    """
+    return {
+        int(t["tid"]): team_chart_color(int(t["tid"]))
+        for t in teams
+        if t.get("tid") is not None and not t.get("disabled")
+    }
 
 def team_dot(tid: Any, palette: dict[int, str]) -> str:
     color = palette.get(safe_int(tid, -1), "#666")
@@ -510,17 +514,15 @@ def active_players(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def free_agents(data: dict[str, Any]) -> list[dict[str, Any]]:
-    # Hide scrub free agents: drop anyone below 50 ovr or below 50 pot.
-    out = []
-    for p in active_players(data):
-        if p.get("tid") != FREE_AGENT_TID:
-            continue
-        if p.get("_fa_bid") is None:  # forced-release players (Gooners waive) always show
-            rating = latest_rating(p)
-            if safe_int(rating.get("ovr")) < 50 or safe_int(rating.get("pot")) < 50:
-                continue
-        out.append(p)
-    return out
+    """Every unsigned player. No quality filter.
+
+    SMP I hid anyone under 50 ovr *and* under 50 pot, which concealed 57 of 135 free
+    agents. On the SMP II pool that filter hides 250 of 376 -- including real rotation
+    players -- so the page would lie about what is actually signable. With a 12-man
+    roster and a hard cap, the cheap end of the wire is exactly what a capped-out team
+    needs to see.
+    """
+    return [p for p in active_players(data) if p.get("tid") == FREE_AGENT_TID]
 
 
 CANONICAL_POS = ("PG", "SG", "SF", "PF", "C")
@@ -578,8 +580,10 @@ def normalize_positions(data: dict[str, Any]) -> None:
                 if c:
                     pb["pos"] = c
     # This is the one core-owned hook every build runs with the full export, so it
-    # also records the deterministic footer metadata (games count, phase, season).
+    # also records the deterministic footer metadata (games count, phase, season)
+    # and binds the color registry to this league's tid -> abbrev mapping.
     register_site_meta(data)
+    register_team_identities(data.get("teams", []))
 
 
 def contract_expiring_players(players: list[dict[str, Any]], exp_year: int, rostered_only: bool = True) -> list[dict[str, Any]]:
@@ -1628,8 +1632,6 @@ def generated_schedule_items(data: dict[str, Any], teams: list[dict[str, Any]], 
     items: list[dict[str, Any]] = []
     raw_day = 1
     total_game_days = len(rounds) * series_count
-    if schedule_days is None and games_per_team == 45 and len(team_ids) == 10:
-        schedule_days = 46
     off_days = max(0, safe_int(schedule_days, total_game_days) - total_game_days) if schedule_days else 0
     off_after = [math.ceil(total_game_days * (i + 1) / (off_days + 1)) for i in range(off_days)]
 

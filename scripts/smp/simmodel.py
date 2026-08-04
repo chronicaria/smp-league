@@ -1,15 +1,8 @@
 from __future__ import annotations
 
-import argparse
-import html
-import json
 import random
 import math
-import re
-import shutil
-import unicodedata
 from collections import defaultdict
-from pathlib import Path
 from typing import Any, Iterable
 
 # Projection engine (faithful zengm port + Monte Carlo). Imported defensively so
@@ -24,8 +17,8 @@ from .core import (
     SITE_META,
     active_players,
     completed_game_items,
-    fmt_number,
     generated_schedule_items,
+    get_attr_value,
     is_completed_game_item,
     latest_rating,
     latest_team_season,
@@ -36,70 +29,87 @@ from .core import (
     safe_int,
     score_items_for_page,
     season_regular_stat,
-    standings_order,
     stat_gp,
     team_mov,
 )
 
 
-# Free-agent asking-salary model (from the user's UFA formula). Maps a player's
-# ovr/pot/age to a "salary score", then interpolates that score on an anchor curve
-# to a dollar figure. All salary values are in $M; BBGM stores thousands (×1000).
-FA_SALARY_ANCHORS = [
-    (52, 1), (55, 3), (58, 8), (60, 12), (62, 16), (64, 20), (66, 24),
-    (68, 28), (70, 32), (72, 35), (74, 39), (76, 43), (78, 47), (80, 50),
-]
+# Free-agent asking-salary model. SMP II prices every contract in the league on one
+# exponential curve (scripts/price_contracts.py) -- salary doubles every FA_PRICE_WIDTH
+# points of overall, times an age factor -- and a free agent's ask is that same curve.
+# A market where the ask and the going rate disagree is not a market: these numbers are
+# what the roster next to them was actually paid. All values here are in $M; BBGM stores
+# thousands (×1000). The old anchor table was interpolated in "salary score" space and
+# tuned to a $300M soft cap; against the $100M hard cap it asked 222% of the league's
+# total cap space for the 120 rostered players.
+FA_PRICE_PIVOT = 60.0     # ovr at which the curve passes through FA_PRICE_AT_PIVOT
+FA_PRICE_WIDTH = 5.0      # the ask doubles every 5 points of overall
+# price_contracts.solve_scale() does not choose this, it SOLVES it: the scale that makes
+# the best 120 players (10 teams × 12) total 78.5% of the league's $1,000M of cap space.
+# $4.27M at 60 ovr is where the SMP II pool lands. Re-solve it (price_contracts.py
+# --report prints it) if the talent pool is ever repriced.
+FA_PRICE_AT_PIVOT = 4.266
+FA_MIN_CONTRACT = 1.0     # gameAttributes.minContract 1000
+FA_MAX_CONTRACT = 50.0    # gameAttributes.maxContract 50000
+# A short deal on the same player costs more per year -- the team is buying flexibility,
+# and length is the only per-year structure BBGM can natively enforce. Mirrors
+# price_contracts.DURATION_PREMIUM, continued one step for the 5-year deals quoted here.
+FA_DURATION_PREMIUM = {1: 1.25, 2: 1.10, 3: 1.00, 4: 0.95, 5: 0.92}
 
 
-def _round_half_up(x: float) -> int:
-    return math.floor(x + 0.5)
+def fa_age_factor(age: int) -> float:
+    """Youth and old age are both discounts (price_contracts.age_factor).
 
-
-def fa_salary_score(ovr: int, pot: int, age: int) -> float:
-    """UFA salary score: ovr adjusted for upside, decline risk, prime, and age."""
-    upside_gap = max(pot - ovr, 0)
+    Unproven upside is the drafter's surplus, decline is the buyer's risk, and
+    peak-age players pay full freight for production you can bank on.
+    """
     if age <= 21:
-        upside_bonus = min(0.38 * upside_gap, 8.0)
-    elif age <= 24:
-        upside_bonus = min(0.28 * upside_gap, 6.0)
-    elif age <= 27:
-        upside_bonus = min(0.15 * upside_gap, 3.5)
-    elif age <= 30:
-        upside_bonus = min(0.05 * upside_gap, 1.5)
-    else:
-        upside_bonus = 0.0
-    decline_gap = max(ovr - pot, 0)
-    decline_penalty = min((0.12 if age <= 30 else 0.22) * decline_gap, 4.0)
-    prime_bonus = 1.0 if 24 <= age <= 29 else 0.0
-    veteran_penalty = 1.25 * max(age - 32, 0)
-    return ovr + upside_bonus - decline_penalty + prime_bonus - veteran_penalty
+        return 0.55
+    if age <= 23:
+        return 0.70
+    if age <= 25:
+        return 0.85
+    if age <= 31:
+        return 1.00
+    if age <= 33:
+        return 0.90
+    if age <= 35:
+        return 0.75
+    return 0.60
 
 
-def _salary_score_to_millions(score: float) -> float:
-    anchors = FA_SALARY_ANCHORS
-    if score <= anchors[0][0]:
-        return float(anchors[0][1])
-    if score >= anchors[-1][0]:
-        return float(anchors[-1][1])
-    for (s0, m0), (s1, m1) in zip(anchors, anchors[1:]):
-        if s0 <= score <= s1:
-            return m0 + (score - s0) / (s1 - s0) * (m1 - m0)
-    return float(anchors[-1][1])
+def _fa_curve_millions(ovr: int, age: int) -> float:
+    """Unclamped, unrounded market value in $M for one season of this player."""
+    return FA_PRICE_AT_PIVOT * (2.0 ** ((ovr - FA_PRICE_PIVOT) / FA_PRICE_WIDTH)) * fa_age_factor(age)
 
 
-def fa_salary_millions(ovr: int, pot: int, age: int) -> int:
-    """Single-year UFA asking salary in $M (rounded half-up, clamped to 1..50)."""
-    raw = _salary_score_to_millions(fa_salary_score(ovr, pot, age))
-    return max(1, min(50, _round_half_up(raw)))
+def _fa_round(millions: float) -> float:
+    """Clamp to the contract range and round to BBGM's $10K grid."""
+    return min(max(round(millions, 2), FA_MIN_CONTRACT), FA_MAX_CONTRACT)
 
 
-def fa_salary_by_length(ovr: int, pot: int, age: int) -> list[int]:
-    """Annual asking salary ($M) for 1..5-year deals. The formula is age-based, so a
-    longer deal averages the yearly figure as the player ages across it (ovr/pot held)."""
+def fa_salary_millions(ovr: int, pot: int, age: int) -> float:
+    """Single-year UFA asking salary in $M, clamped to the min/max contract.
+
+    ``pot`` is accepted (and ignored) on purpose: under SMP II pricing potential
+    does not move the ask, it moves the contract LENGTH a team is willing to
+    offer, and here the caller picks the length -- see fa_salary_by_length.
+    """
+    return fa_salary_by_length(ovr, pot, age)[0]
+
+
+def fa_salary_by_length(ovr: int, pot: int, age: int) -> list[float]:
+    """Annual asking salary ($M) for 1..5-year deals.
+
+    The curve is age-based, so a longer deal averages the yearly figure as the
+    player ages across it (ovr/pot held), then takes that length's duration
+    premium. A 34-year-old therefore quotes a steep one-year number and a cheap
+    five-year one; a 24-year-old quotes the reverse.
+    """
     out = []
     for length in range(1, 6):
-        raws = [_salary_score_to_millions(fa_salary_score(ovr, pot, age + i)) for i in range(length)]
-        out.append(max(1, min(50, _round_half_up(sum(raws) / len(raws)))))
+        years = [_fa_curve_millions(ovr, age + i) for i in range(length)]
+        out.append(_fa_round(sum(years) / len(years) * FA_DURATION_PREMIUM[length]))
     return out
 
 
@@ -147,12 +157,41 @@ def _player_projection(player: dict[str, Any], season: int) -> dict[str, Any] | 
 
 
 # --- team projection --------------------------------------------------------
-REPLACEMENT_OVR = 40.0  # roster-construction floor: a freely-available filler
+# Roster-construction floor: a freely-available filler. Only a fallback inside
+# league_bench_ovrs, and the literal is mirrored in static/js/lineup.js, so it cannot
+# move on its own -- SMP II's real replacement level is far higher (the best undrafted
+# player is 59 ovr), but the fallback almost never fires against a full ten rosters.
+REPLACEMENT_OVR = 40.0
 
 # Games at which current-season scoring margin carries half the strength weight:
 # weight = gp / (gp + SIM_MOV_BLEND_K). At gp=0 (fresh season) strength is 100%
-# roster-based; by a full 45-game season MOV carries ~82%.
+# roster-based; by a full 36-game season MOV carries ~78%. K is denominated in
+# games played, not in fraction-of-season, so the shorter SMP II schedule does
+# not move it -- twenty games of margin are exactly as noisy either way.
 SIM_MOV_BLEND_K = 10.0
+
+# zengm rates a team as a RANK-DECAYED sum over its top ten players, not a flat one
+# (team/ovr.basketball.ts, ported at projections.team_ovr): the best man on the roster
+# is worth ROTATION_W_A points of scoring margin per point of overall and each slot
+# below him is worth exp(ROTATION_W_B) as much, because that is roughly how the engine
+# hands out minutes. On a 12-man SMP II roster the top ten take ~94% of them. Using
+# these constants is what makes the projected records here agree with the Trade Machine
+# and Lineup Lab, which already run this exact formula client-side (trade-extras.js).
+ROTATION_SLOTS = 10
+ROTATION_W_A = 0.3334
+ROTATION_W_B = -0.1609
+# 50 is an average player on the engine's rating scale: a rotation of ten 50s projects
+# to an even scoring margin, and an impact is the margin a player adds over that.
+ROTATION_PAR_OVR = 50.0
+
+
+def rotation_weight(rank: int) -> float:
+    """Scoring margin per point of overall for the ``rank``-th rotation player (0 = best)."""
+    return ROTATION_W_A * math.exp(ROTATION_W_B * max(0, rank))
+
+
+# What a caller with no roster context gets: the average of the ten rotation slots.
+MEAN_ROTATION_WEIGHT = sum(rotation_weight(i) for i in range(ROTATION_SLOTS)) / ROTATION_SLOTS
 
 
 def _player_current_ovr(player: dict[str, Any], season: int) -> int | None:
@@ -176,8 +215,17 @@ def current_team_ovr(roster: list[dict[str, Any]], season: int) -> int | None:
     return _proj.team_ovr(ovrs)
 
 
-def player_game_impact(player: dict[str, Any], season: int) -> float:
-    """Estimated per-game scoring-margin impact versus a replacement player."""
+def player_game_impact(player: dict[str, Any], season: int, rank: int | None = None) -> float:
+    """Estimated per-game scoring-margin contribution above an average player.
+
+    ``rank`` is the slot the player holds in his team's rotation (0 = best, 9 =
+    tenth man). A box-score impact already carries the minutes he actually
+    played, so the rank changes nothing there; a rating-only impact has no
+    minutes in it at all, so the rank is where they come from. Callers with no
+    roster in hand omit ``rank`` and get the average rotation slot -- the right
+    sort key, but it understates stars, so sort first and then re-read each
+    player at his rank (rotation_impacts does exactly that).
+    """
     stat = season_regular_stat(player, season)
     gp = stat_gp(stat)
     mpg = (safe_float(stat.get("min")) / gp) if gp else 0.0
@@ -186,21 +234,58 @@ def player_game_impact(player: dict[str, Any], season: int) -> float:
         impact = (bpm + 2.0) * (mpg / 48.0)  # replacement level is roughly -2 BPM
     else:
         rating = latest_rating(player, season)
-        impact = max(0.0, (safe_float(rating.get("ovr"), 40.0) - 50.0) * 0.12)
+        weight = MEAN_ROTATION_WEIGHT if rank is None else rotation_weight(rank)
+        impact = (safe_float(rating.get("ovr"), 40.0) - ROTATION_PAR_OVR) * weight
     return max(-2.0, min(10.0, impact))
+
+
+def rotation_impacts(roster: list[dict[str, Any]], season: int) -> list[tuple[dict[str, Any], float]]:
+    """The top-``ROTATION_SLOTS`` players and each one's margin contribution at his slot."""
+    rotation = sorted(roster, key=lambda p: -player_game_impact(p, season))[:ROTATION_SLOTS]
+    return [(p, player_game_impact(p, season, rank)) for rank, p in enumerate(rotation)]
+
+
+def rotation_strength(roster: list[dict[str, Any]], season: int) -> float:
+    """Team scoring-margin signal from a roster as it stands: the rank-weighted rotation sum.
+
+    On a roster with no games played this reproduces zengm's own team rating
+    (projections.team_ovr) exactly, up to the constant that centering removes.
+    Slots a short roster cannot fill contribute nothing -- they count as an
+    average player rather than zengm's 0-overall pad, because an 11-man roster
+    is a rotation one man light, not a 30-point underdog.
+    """
+    return sum(impact for _, impact in rotation_impacts(roster, season))
+
+
+def playoff_series_lengths(data: dict[str, Any], season: int) -> list[int]:
+    """Games in each playoff round, from ``gameAttributes.numGamesPlayoffSeries``.
+
+    SMP II runs [5, 5] — two best-of-fives, three wins to advance — where SMP I
+    ran [7, 7]. Both are two rounds, so the field is four teams either way and
+    only the series length changed; publishing title odds for a format the league
+    does not play is the thing to avoid. Falls back to two best-of-sevens when the
+    export carries no usable value.
+    """
+    lengths = get_attr_value(((data or {}).get("gameAttributes") or {}).get("numGamesPlayoffSeries"), season)
+    if isinstance(lengths, list):
+        out = [safe_int(value) for value in lengths if safe_int(value) > 0]
+        if out:
+            return out
+    return [7, 7]
 
 
 def simulate_league(data: dict[str, Any], teams: list[dict[str, Any]], players: list[dict[str, Any]], season: int, sims: int = 10000) -> dict[str, Any]:
     """Monte Carlo the rest of the season and the playoffs.
 
-    Team strength is a roster signal from the CURRENT roster — top-10 per-game
-    player impact, centered on the league mean — blended with THIS season's
-    scoring margin only as games accumulate (MOV weight = gp/(gp+SIM_MOV_BLEND_K)).
-    A season with no games played is 100% roster-based; last season's margin is
-    never used. Players who are injured subtract their impact until their
-    expected return, so odds dip while stars are out and recover as they heal.
-    Trades are picked up automatically because strength comes from the roster
-    as it stands today.
+    Team strength is a roster signal from the CURRENT roster — the rank-weighted
+    top-10 rotation (rotation_strength), centered on the league mean — blended
+    with THIS season's scoring margin only as games accumulate (MOV weight =
+    gp/(gp+SIM_MOV_BLEND_K)). A season with no games played is 100% roster-based;
+    last season's margin is never used. Injured rotation players subtract their
+    impact until their expected return, so odds dip while stars are out and
+    recover as they heal; a twelfth man's absence moves nothing, because the
+    rotation closes over him. Trades are picked up automatically because strength
+    comes from the roster as it stands today.
 
     A season that hasn't been played yet starts every team at 0-0 and runs over
     the exported schedule when the export carries one, else a projected
@@ -234,14 +319,12 @@ def simulate_league(data: dict[str, Any], teams: list[dict[str, Any]], players: 
     roster_strength: dict[int, float] = {}
     injured_by_tid: dict[int, list[tuple[float, int]]] = defaultdict(list)
     for tid in tids:
-        roster = roster_by_tid.get(tid, [])
-        rotation = sorted(roster, key=lambda p: -player_game_impact(p, season))[:10]
-        roster_strength[tid] = sum(player_game_impact(p, season) for p in rotation)
-        for player in roster:
+        rotation = rotation_impacts(roster_by_tid.get(tid, []), season)
+        roster_strength[tid] = sum(impact for _, impact in rotation)
+        for player, impact in rotation:
             injury = player.get("injury") or {}
             games_out = safe_int(injury.get("gamesRemaining"))
             if injury.get("type") and injury.get("type") != "Healthy" and games_out > 0:
-                impact = player_game_impact(player, season)
                 if impact > 0.2:
                     injured_by_tid[tid].append((impact, games_out))
     mean_roster = sum(roster_strength.values()) / len(roster_strength) if roster_strength else 0.0
@@ -296,17 +379,23 @@ def simulate_league(data: dict[str, Any], teams: list[dict[str, Any]], players: 
             base_strength[away] - penalty_at[away][min(k_away, max_left)],
         )
 
+    # 20290101 is an SMP I date, kept as-is only because it is the seed: changing it
+    # would reshuffle every published number for no gain, and simulator.js mirrors the
+    # literal so the Win-Out Machine's odds match the home page's.
     rng = random.Random(20290101)
     playoff_count = defaultdict(int)
     finals_count = defaultdict(int)
     champ_count = defaultdict(int)
     seed_counts: dict[int, list[int]] = {tid: [0] * len(tids) for tid in tids}
     win_total = defaultdict(float)
+    round_lengths = playoff_series_lengths(data, season)
 
-    def sim_series(a: int, b: int, length: int = 7) -> int:
+    def sim_series(a: int, b: int, length: int) -> int:
         """Best-of-`length`; team `a` has home court. Returns the winner."""
         needed = length // 2 + 1
         a_wins = b_wins = 0
+        # 2-2-1-1-1 sliced to the series length: for a best-of-five that is 2-2-1,
+        # which is what the engine plays.
         home_pattern = [True, True, False, False, True, False, True]
         for game_index in range(length):
             a_home = home_pattern[game_index % 7]
@@ -344,14 +433,14 @@ def simulate_league(data: dict[str, Any], teams: list[dict[str, Any]], players: 
         for tid in tids:
             win_total[tid] += wins[tid]
         # playoffs: 1v4 and 2v3, then the final; higher seed has home court
-        finalist_a = sim_series(order[0], order[3])
-        finalist_b = sim_series(order[1], order[2])
+        finalist_a = sim_series(order[0], order[3], round_lengths[0])
+        finalist_b = sim_series(order[1], order[2], round_lengths[0])
         finals_count[finalist_a] += 1
         finals_count[finalist_b] += 1
         if order.index(finalist_a) <= order.index(finalist_b):
-            champ = sim_series(finalist_a, finalist_b)
+            champ = sim_series(finalist_a, finalist_b, round_lengths[-1])
         else:
-            champ = sim_series(finalist_b, finalist_a)
+            champ = sim_series(finalist_b, finalist_a, round_lengths[-1])
         champ_count[champ] += 1
         # what's-at-stake bookkeeping for the next game day
         for _, home, away, gid in stakes_games:
@@ -473,9 +562,10 @@ def sim_client_inputs(data: dict[str, Any], teams: list[dict[str, Any]], players
     """Team strengths + remaining schedule for the client-side simulator.
 
     Mirrors the strength model and remaining-schedule selection at the top of
-    simulate_league exactly (fresh-season detection, current-roster top-10
-    impact centered on the league mean, blended with CURRENT-season MOV at
-    weight gp/(gp+SIM_MOV_BLEND_K) — never last season's margin) so that a
+    simulate_league exactly (fresh-season detection, the current roster's
+    rank-weighted rotation centered on the league mean, blended with
+    CURRENT-season MOV at weight gp/(gp+SIM_MOV_BLEND_K) — never last season's
+    margin) so that a
     client sim over this payload agrees with the server-side Monte Carlo. Injury
     penalties are intentionally left out of the payload — they decay per game and
     matter only mid-season; the client sims the healthy baseline.
@@ -512,8 +602,7 @@ def sim_client_inputs(data: dict[str, Any], teams: list[dict[str, Any]], players
             roster_by_tid[tid].append(player)
     roster_strength: dict[int, float] = {}
     for tid in tids:
-        rotation = sorted(roster_by_tid.get(tid, []), key=lambda p: -player_game_impact(p, season))[:10]
-        roster_strength[tid] = sum(player_game_impact(p, season) for p in rotation)
+        roster_strength[tid] = rotation_strength(roster_by_tid.get(tid, []), season)
     mean_roster = sum(roster_strength.values()) / len(roster_strength) if roster_strength else 0.0
     strengths: dict[int, float] = {}
     for tid in tids:
@@ -575,39 +664,6 @@ def league_bench_ovrs(players: list[dict[str, Any]], season: int) -> list[float]
     return sorted(out, reverse=True)
 
 
-def magic_elimination(teams: list[dict[str, Any]], season: int, season_len: int = 45) -> dict[int, str]:
-    """Magic number to clinch top 4, or elimination number, per team."""
-    rows = []
-    for team in teams:
-        tid = safe_int(team.get("tid"))
-        team_season = latest_team_season(team, season)
-        stat = latest_team_stat(team, season)
-        won = safe_float(team_season.get("won"))
-        lost = safe_float(team_season.get("lost"))
-        gp = safe_float(stat.get("gp"))
-        rows.append({"tid": tid, "won": won, "lost": lost, "gp": gp})
-    if not rows:
-        return {}
-    order = standings_order(teams, season)
-    by_tid = {row["tid"]: row for row in rows}
-    out: dict[int, str] = {}
-    if len(order) < 5:
-        return {tid: "—" for tid in order}
-    fourth = by_tid[order[3]]
-    fifth = by_tid[order[4]]
-    for rank, tid in enumerate(order, 1):
-        row = by_tid[tid]
-        remaining = max(0.0, season_len - row["won"] - row["lost"])
-        if rank <= 4:
-            rival = fifth
-            rival_remaining = max(0.0, season_len - rival["won"] - rival["lost"])
-            magic = rival["won"] + rival_remaining - row["won"] + 1
-            out[tid] = "Clinched" if magic <= 0 else f"M {fmt_number(magic, 0)}"
-        else:
-            rival = fourth
-            tragic = row["won"] + remaining - rival["won"] + 1
-            out[tid] = "Eliminated" if tragic <= 0 else f"E {fmt_number(tragic, 0)}"
-    return out
 
 
 def playoff_clinch_marks(data: dict[str, Any], teams: list[dict[str, Any]], season: int) -> dict[int, str]:

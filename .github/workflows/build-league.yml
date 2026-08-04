@@ -30,14 +30,22 @@ jobs:
 
       - name: Generate league site from the newest export
         run: |
-          # Pick the export that is furthest along, by (season, phase, games played).
-          # Games played (len of the completed-games array) only grows over time, so it
+          # ONLY the current league's exports live at league-data/*.json. A finished
+          # league is archived to league-data/<league>/, which this non-recursive glob
+          # never reaches — that is the whole mechanism for "which league is this".
+          # It has to be a layout rule rather than a heuristic because a reboot resets
+          # the season counter (SMP I ran 2026-2031, SMP II restarts at 2026), so no
+          # comparison of export contents can tell the new league from the old one.
+          #
+          # Within one league, the export that is furthest along wins, by
+          # (season, phase, games played). Games played only grows over time, so it
           # breaks ties between same-phase exports (e.g. preseason vs day 1, both phase 1)
           # and keeps the day*/playoff*/preseason naming and season rollovers robust.
+          # Every candidate is logged so a wrong pick is visible instead of silent.
           NEWEST=$(python3 - <<'PY'
-          import glob, json
+          import glob, json, sys
           best = None
-          for p in glob.glob("league-data/*.json"):
+          for p in sorted(glob.glob("league-data/*.json")):
               try:
                   data = json.load(open(p))
               except Exception:
@@ -52,13 +60,22 @@ jobs:
                   continue
               n_games = len(data.get("games", []))
               key = (season, phase if isinstance(phase, int) else -1, n_games, p)
+              print(f"  candidate {p}: season={key[0]} phase={key[1]} games={key[2]}", file=sys.stderr)
               if best is None or key > best[0]:
                   best = (key, p)
           print(best[1] if best else "")
           PY
           )
-          if [ -z "$NEWEST" ]; then echo "No usable export found"; exit 1; fi
+          if [ -z "$NEWEST" ]; then
+            echo "No usable export found at league-data/*.json."
+            echo "Drop the current league's export there; archived leagues belong in league-data/<league>/."
+            exit 1
+          fi
           echo "Building from $NEWEST"
+          # Clear the previous build so pages the generator no longer emits (rivalries is
+          # skipped until games have been played) disappear instead of going stale. Both
+          # lines already no-op on paths that do not exist, which they will not in year
+          # one: with zero completed games there is no games/ and no rivalries/.
           rm -rf assets games players teams rivalries
           rm -f compare.html draft.html free-agency.html history.html index.html records.html schedule.html trade.html rivalries.html classics.html wrapped.html lineup.html simulator.html
           python3 scripts/league_generator.py "$NEWEST" --out .
@@ -67,9 +84,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add assets games players teams rivalries compare.html draft.html free-agency.html history.html index.html records.html schedule.html trade.html rivalries.html classics.html wrapped.html lineup.html simulator.html
-          # Odds-history ledger (appended by the generator; may not exist yet on old checkouts)
-          git add --ignore-errors league-data/odds_history.json || true
+          # Stage everything the build touched, including deletions. A fixed pathspec
+          # list cannot work here: `git add` exits 128 and stages NOTHING when any one
+          # path is missing, and in year one there is no games/ and no rivalries/ at all.
+          # -A also picks up the odds-history ledger the generator appends under
+          # league-data/, and drops pages that are no longer generated.
+          git add -A .
           if git diff --cached --quiet; then
             echo "No league changes."
           else

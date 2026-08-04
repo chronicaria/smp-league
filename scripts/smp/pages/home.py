@@ -1,16 +1,9 @@
 from __future__ import annotations
 
-import argparse
-import html
 import json
-import random
 import math
-import re
-import shutil
-import unicodedata
 from collections import defaultdict
-from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from ..core import (
     AWARD_ROWS,
@@ -33,6 +26,7 @@ from ..core import (
     game_recap_text,
     game_url,
     game_winner_tid,
+    get_attr_value,
     heat_style,
     inferred_upcoming_schedule_season,
     initials,
@@ -110,21 +104,55 @@ def _odds_pct(pct: float) -> str:
     return out if out == "—" else out + "%"
 
 
+def _gb_text(gb: float) -> str:
+    """Games back, half-game precision with no trailing zeros: 0, 0.5, 2, 10, 19.5.
+
+    Not fmt_number(gb, 1).rstrip(".0") — str.rstrip takes a CHARACTER SET, so
+    that spelling turned a 10.0-game deficit into "1".
+    """
+    if abs(gb) < 1e-12:
+        return "0"
+    return f"{gb:g}"
+
+
+def _series_phrase(data: dict[str, Any], season: int) -> str:
+    """"best-of-fives" etc., read from gameAttributes.numGamesPlayoffSeries.
+
+    SMP II is [5, 5]; the copy is derived so it cannot drift from the league
+    file the way the hardcoded "best-of-sevens" did. Empty when the rounds run
+    to different lengths (no one phrase is true) or the attribute is missing.
+    """
+    lengths = get_attr_value((data.get("gameAttributes") or {}).get("numGamesPlayoffSeries"), season)
+    if not isinstance(lengths, list) or not lengths:
+        return ""
+    unique = {safe_int(value) for value in lengths}
+    if len(unique) != 1:
+        return ""
+    length = unique.pop()
+    words = {1: "single games", 3: "best-of-threes", 5: "best-of-fives", 7: "best-of-sevens"}
+    return words.get(length, f"best-of-{length} series")
+
+
 def playoff_odds_card(data: dict[str, Any], teams: list[dict[str, Any]], season: int) -> str:
     palette = team_palette_by_tid(teams)
     sim = league_sim(data, teams, season)
     odds = sim.get("teams") or {}
     if not odds or all(o["games_left"] == 0 for o in odds.values()):
         return ""
-    season_len = regular_season_length(data, season) or 45
+    season_len = regular_season_length(data, season)
     infos = sorted(odds.items(), key=lambda kv: (-kv[1]["po"], -kv[1]["proj_w"]))
     teams_by_tid = {int(t.get("tid")): t for t in teams if t.get("tid") is not None}
     n_seeds = len(infos)
     rows = []
     for tid, o in infos:
         team = teams_by_tid.get(tid, {})
+        team_season = latest_team_season(team, season)
         proj_w = o["proj_w"]
-        proj_l = season_len - proj_w
+        # numGames is the schedule length; if the export omits it, a team's own
+        # played-plus-remaining is the same number.
+        games = season_len or (safe_float(team_season.get("won"), 0.0)
+                               + safe_float(team_season.get("lost"), 0.0) + o["games_left"])
+        proj_l = games - proj_w
         po_pct = 100 * o["po"]
         finals_pct = 100 * o["finals"]
         champ_pct = 100 * o["champ"]
@@ -143,9 +171,11 @@ def playoff_odds_card(data: dict[str, Any], teams: list[dict[str, Any]], season:
             cells.append(td(_pct1(pct), sort=pct, style=seed_cell_style(pct), cls=cls))
         rows.append(f'<tr data-tid="{tid}">{"".join(cells)}</tr>')
     headers = ["Team", "Proj W-L", "PO%", "Finals%", "Title%"] + [str(i) for i in range(1, n_seeds + 1)]
+    series = _series_phrase(data, season)
     detail = ("Team strength is rated from each current roster (injury-aware), "
               "blending in this season's results as games accumulate. "
-              "Playoffs are simulated as 1v4 / 2v3 best-of-sevens.")
+              + (f"Playoffs are simulated as 1v4 / 2v3 {series}." if series else
+                 "Playoffs are simulated as 1v4 / 2v3."))
     if sim.get("fresh"):
         title = f"{season} Playoff Odds"
         note = "10,000 sims · roster-based strength · projected schedule"
@@ -324,7 +354,7 @@ def standings_table(data: dict[str, Any], teams: list[dict[str, Any]], season: i
             stat = row["stat"]
             if leader and (row["won"] + row["lost"]) > 0:
                 gb = ((leader["won"] - row["won"]) + (row["lost"] - leader["lost"])) / 2
-                gb_text = "0" if abs(gb) < 1e-12 else fmt_number(gb, 1).rstrip(".0")
+                gb_text = _gb_text(gb)
             else:
                 gb_text = "—"
             mov = row["mov"]
@@ -644,8 +674,14 @@ def awards_voting_table(data: dict[str, Any], players: list[dict[str, Any]], tea
     teams_by_tid = {team["tid"]: team for team in teams}
     scoreboard = award_scoreboard(data, players, teams, season)
     headers = ["Award", "1st", "2nd", "3rd", "4th", "5th"]
+    # Year one has no prior season to improve on, so every MIP term collapses to
+    # the raw current stat and the row restates the MVP row verbatim. Hide it
+    # until someone has a previous season; the scorer itself is unchanged.
+    has_prior_season = any(previous_regular_stat(player, season) for player in players)
     rows = []
     for key, short_label, long_label in AWARD_ROWS:
+        if key == "mip" and not has_prior_season:
+            continue
         cells = [td(f'<strong>{esc(short_label)}</strong><span>{esc(long_label)}</span>', sort=short_label, cls="award-name")]
         for score, player, stat in scoreboard.get(key, [])[:5]:
             cells.append(td(award_candidate_cell(player, stat, teams_by_tid, key), sort=score, cls="candidate-cell"))
@@ -877,51 +913,70 @@ def _fin_pick(f: dict[str, Any], keys: tuple[str, ...], default: float = 0.0) ->
     return default
 
 
+def _salary_cap(data: dict[str, Any], season: int) -> float:
+    """The season's cap, read from the export — never a literal. SMP II: $100M, hard."""
+    return safe_float(get_attr_value((data.get("gameAttributes") or {}).get("salaryCap"), season), 0.0)
+
+
 def home_finances_table(data: dict[str, Any], teams: list[dict[str, Any]], players: list[dict[str, Any]], season: int) -> str:
-    """League-wide finance snapshot for the home page: one row per team, biggest budget first."""
+    """League-wide cap sheet for the home page: one row per team, most cap room first.
+
+    The cap is HARD, so there is no budget to overspend and no luxury tax to
+    pay: payroll against the cap is the whole story.
+    """
     odds = (league_sim(data, teams, season) or {}).get("teams") or None
     try:
         fin = compute_league_finances(data, teams, players, season, odds)["teams"]
     except TypeError:  # defensive: finance.py signature may evolve in the parallel merge
         fin = compute_league_finances(data, teams, players, season)["teams"]
     palette = team_palette_by_tid(teams)
+    cap = _salary_cap(data, season)
     year = season + 1
     rows_data = []
     for t in teams:
         f = fin.get(safe_int(t.get("tid"), -99))
         if f is None:
             continue
-        rev_proj = _fin_pick(f, ("revenue_proj", "rev_proj"))
-        tax_proj = _fin_pick(f, ("tax_proj", "luxtax"))
-        tax_share = _fin_pick(f, ("tax_share_in", "tax_share"))
-        # Budget = projected net revenue (revenue − luxury tax + tax redistribution + adjustments).
-        budget = _fin_pick(f, ("net_proj", "net_revenue_proj", "net_revenue"),
-                           rev_proj - tax_proj + tax_share + _fin_pick(f, ("adj",)))
+        payroll = _fin_pick(f, ("payroll",))
         committed = _fin_pick(f, ("committed_next", "payroll_next"))
-        surplus = _fin_pick(f, ("surplus_next",), budget - committed)
-        rows_data.append((t, f, rev_proj, budget, committed, surplus))
+        room = _fin_pick(f, ("cap_room",), cap - payroll)
+        rows_data.append((t, f, payroll, room, committed, cap - committed))
     if not rows_data:
         return ""
     rows_data.sort(key=lambda r: (-r[3], team_full_name(r[0])))
-    headers = ["Team", "Record", "Proj revenue", f"{year} budget", f"{year} committed payroll", "Surplus"]
+    headers = ["Team", "Record", "Payroll", "Cap room"]
+    # Every year-one contract runs past next season, so the next-season pair would
+    # restate Payroll / Cap room on every row; it appears once a team's commitment
+    # actually differs from what it is paying now.
+    show_next = any(abs(r[4] - r[2]) > 1e-9 for r in rows_data)
+    if show_next:
+        headers += [f"{year} committed", f"{year} cap room"]
+
+    def room_cell(room: float) -> str:
+        if not cap:  # no salaryCap in the export: the room columns have nothing to say
+            return td("—")
+        return td(f'<span class="{"delta-up" if room >= 0 else "delta-down"}">{fmt_money_pm(room)}</span>', sort=room)
+
     rows = []
-    for t, f, rev_proj, budget, committed, surplus in rows_data:
+    for t, f, payroll, room, committed, room_next in rows_data:
         tid = safe_int(t.get("tid"))
-        sc = "delta-up" if surplus >= 0 else "delta-down"
-        rows.append("".join([
+        cells = [
             td(f'{team_dot(tid, palette)}<a class="player-link" href="teams/{team_slug(t)}-finances.html">{esc(team_full_name(t))}</a>',
                sort=team_full_name(t), cls="name-cell"),
             td(fmt_record(f.get("won", 0), f.get("lost", 0)), sort=safe_int(f.get("won", 0))),
-            td(fmt_money(rev_proj), sort=rev_proj),
-            td(fmt_money(budget), sort=budget),
-            td(fmt_money(committed), sort=committed),
-            td(f'<span class="{sc}">{fmt_money_pm(surplus)}</span>', sort=surplus),
-        ]))
-    detail = (f"Budget = projected revenue − luxury tax + tax redistribution. "
-              f"Surplus = {year} budget − {year} committed payroll (roster, dead money, retention).")
+            td(fmt_money(payroll), sort=payroll),
+            room_cell(room),
+        ]
+        if show_next:
+            cells += [td(fmt_money(committed), sort=committed), room_cell(room_next)]
+        rows.append("".join(cells))
+    cap_label = fmt_money(cap) if cap else "the cap"
+    next_note = f" {year} committed is next season's guaranteed salary (roster, dead money, retention)." if show_next else ""
+    detail = (f"Cap room = {cap_label} hard cap − payroll; a team at the cap can only add "
+              f"minimum contracts, and there is no luxury tax to buy its way past.{next_note}")
     return f"""
     <section class="card home-section">
-      <div class="section-title-row"><h2>Team Finances</h2><span class="muted small-copy" title="{esc(detail)}">{year} budget vs committed payroll</span></div>
+      <div class="section-title-row"><h2>Team Finances</h2><span class="muted small-copy" title="{esc(detail)}">payroll against the {esc(cap_label)} hard cap</span></div>
       {table_html(headers, rows, table_id="home-finances")}
     </section>
     """
@@ -970,14 +1025,15 @@ def preseason_banner(data: dict[str, Any], season: int) -> str:
     explanation line replaces the zero-data standings / team-stats /
     award-sentiment cards (no dash walls). A regular-season export with zero
     completed games is labeled Opening Day rather than Preseason."""
-    season_len = regular_season_length(data, season) or 45
+    season_len = regular_season_length(data, season)
     pill = "Opening Day" if phase_value(data) >= 1 else "Preseason"
+    games_note = f'<span class="muted small-copy">{esc(season_len)} games ahead</span>' if season_len else ""
     return f"""
     <section class="card home-section hm-banner">
       <div class="hm-banner-row">
         <span class="hm-phase-pill">{esc(pill)}</span>
         <h2 class="hm-banner-title">The {esc(season)} season hasn't tipped off yet</h2>
-        <span class="muted small-copy">{esc(season_len)} games ahead</span>
+        {games_note}
       </div>
       <p class="hm-banner-note muted small-copy">Standings and stats go live with the first results — everything below is projected from current rosters.</p>
     </section>
@@ -1097,7 +1153,10 @@ def preseason_rookie_watch_card(players: list[dict[str, Any]], teams: list[dict[
         if safe_int(player.get("tid"), -9) < 0:
             continue
         draft = player.get("draft") or {}
-        if draft.get("year") != season - 1:
+        # Same two-year window as the in-season Rookie Watch and the ROY scorer:
+        # a single real draft class can land on either side of the league's first
+        # season (SMP II's 2003 class carries draft years 2025 and 2026).
+        if draft.get("year") not in {season - 1, season}:
             continue
         rating = latest_rating(player, season)
         rookies.append((safe_int(rating.get("ovr")), safe_int(rating.get("pot")), player, rating, draft))

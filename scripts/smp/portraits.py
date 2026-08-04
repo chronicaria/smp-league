@@ -8,8 +8,13 @@ identity colors and writes the recolored copies to ``<out>/assets/faces/`` —
 ``assets/faces/`` in the deployed site is build output only.
 
 ``portrait_html`` renders the fallback chain for pages: hotlinked photo
-(``imgURL``) when present, else the recolored face SVG when the manifest has
-the pid, else an inline monogram roundel. Never a broken image.
+(``imgURL``) when present, else the recolored face SVG when the player owns one,
+else an inline monogram roundel. Never a broken image.
+
+A rendered SVG is only ever used for a player who still carries a ``face`` in
+the export being built — see ``has_face``. pids are league-local, so a manifest
+rendered from a different league would otherwise paint one player's portrait
+onto whoever happens to hold that pid now.
 """
 
 from __future__ import annotations
@@ -65,8 +70,22 @@ def load_face_manifest() -> dict[str, Any]:
     return {"pids": pids, "sentinels": tuple(str(s) for s in sentinels)}
 
 
-def has_face(pid: Any) -> bool:
-    return isinstance(pid, int) and pid in load_face_manifest()["pids"]
+def has_face(player: Union[dict[str, Any], None]) -> bool:
+    """True when this player owns the rendered ``{pid}.svg``, not merely shares its pid.
+
+    render.mjs only renders players carrying a non-empty ``face`` object, so a
+    player without one in the current export cannot be the player that SVG was
+    drawn for — the manifest is left over from another league. Requiring both
+    keeps a stale manifest from putting a stranger's portrait on a real player;
+    faces reappear on their own once render.mjs is re-run for this league.
+    """
+    if not isinstance(player, dict):
+        return False
+    pid = player.get("pid")
+    if not isinstance(pid, int) or pid not in load_face_manifest()["pids"]:
+        return False
+    face = player.get("face")
+    return isinstance(face, dict) and bool(face)
 
 
 def _face_colors(player: Union[dict[str, Any], None]) -> tuple[str, str, str]:
@@ -92,13 +111,14 @@ def _write_if_changed(path: Path, content: str) -> bool:
 
 def emit_faces(out_dir: Union[str, Path], players: Union[dict[int, dict[str, Any]], Iterable[dict[str, Any]]]) -> None:
     """Write recolored face SVGs to ``<out_dir>/assets/faces/{pid}.svg`` for
-    every pid in the manifest.
+    every player in this export that owns one.
 
     ``players`` is either a pid→player mapping or an iterable of player dicts
     (each carrying ``pid``/``tid``). Sentinels are literally string-replaced
     with the player's current team identity colors (free agents → neutral
     grays). Deterministic: same inputs → identical bytes; unchanged files are
-    not rewritten.
+    not rewritten. Emission uses the same ``has_face`` gate the pages do, so the
+    output never carries a face no page can reach.
     """
     if isinstance(players, dict):
         players_by_pid = players
@@ -111,12 +131,15 @@ def emit_faces(out_dir: Union[str, Path], players: Union[dict[int, dict[str, Any
     dest.mkdir(parents=True, exist_ok=True)
 
     for pid in sorted(manifest["pids"]):
+        player = players_by_pid.get(pid)
+        if not has_face(player):
+            continue
         src = RENDERED_DIR / f"{pid}.svg"
         try:
             svg = src.read_text(encoding="utf-8")
         except OSError:
             continue  # manifest/file drift; skip rather than break the build
-        colors = _face_colors(players_by_pid.get(pid))
+        colors = _face_colors(player)
         for sentinel, color in zip(sentinels, colors):
             svg = svg.replace(sentinel, color)
         _write_if_changed(dest / f"{pid}.svg", svg)
@@ -137,7 +160,7 @@ def portrait_html(
     """
     name = player_name(player)
     pid = player.get("pid")
-    face_src = f"{root}assets/faces/{pid}.svg" if has_face(pid) else None
+    face_src = f"{root}assets/faces/{pid}.svg" if has_face(player) else None
 
     img = player.get("imgURL") or ""
     if isinstance(img, str) and img.strip():

@@ -16,8 +16,10 @@ from ..core import (
     ALL_PLAYERS_BY_PID,
     RATING_GROUP_STARTS,
     TEAM_RATING_RANK_KEYS,
+    active_team_ids,
     active_teams_for_season,
     age,
+    regular_season_length,
     build_game_logs,
     canonical_pos,
     completed_game_items,
@@ -34,6 +36,7 @@ from ..core import (
     game_sort_key,
     game_url,
     game_winner_tid,
+    get_attr_value,
     heat_style,
     initials,
     is_completed_game_item,
@@ -78,16 +81,28 @@ from ..finance import (
     FIN_FINALS,
     FIN_PER_WIN,
     FIN_PLAYOFF,
-    FIN_SOFT_CAP,
     fmt_money_pm,
     team_finances_table,
 )
 
 
 def _fin_mil(amount: float) -> str:
-    """Exact short money label for a FIN_* constant ($12.8M, $15M) — fmt_money
-    renders 12800 as "$12.80M", which reads wrong in rules copy."""
+    """Exact short money label for a FIN_* constant ($5.3M, $7M) — fmt_money
+    renders 5300 as "$5.30M", which reads wrong in rules copy."""
     return f"${amount / 1000:g}M"
+
+
+def _cap_rules(data: dict[str, Any] | None, season: int) -> dict[str, Any]:
+    """The league's cap rules for ``season``, read straight off gameAttributes so
+    the team pages can never drift from the export: {"cap", "hard", "minimum"}
+    (money in thousands). ``cap`` is 0.0 when the export carries none, which is
+    the signal for the cap cards to render nothing at all."""
+    ga = (data or {}).get("gameAttributes") or {}
+    return {
+        "cap": safe_float(get_attr_value(ga.get("salaryCap"), season), 0.0),
+        "hard": str(get_attr_value(ga.get("salaryCapType"), season) or "") == "hard",
+        "minimum": safe_float(get_attr_value(ga.get("minContract"), season), 0.0),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -208,32 +223,6 @@ def _roundel(player: dict[str, Any], cls: str, root: str) -> str:
     the monogram beneath keeps the roundel from ever rendering empty."""
     mono = monogram_svg(initials(player), player.get("tid"), css_class="monogram tm-under")
     return f"{mono}{_portrait(player, cls, root)}"
-
-
-def team_vitals_html(team: dict[str, Any], season: int) -> str:
-    team_season = latest_team_season(team, season)
-    hype = safe_float(team_season.get("hype"), float("nan"))
-    att = safe_float(team_season.get("att"))
-    gp_home = safe_float(team_season.get("gpHome"))
-    cash = safe_float(team_season.get("cash"), float("nan"))
-    pop = safe_float(team_season.get("pop"), float("nan"))
-    owner = team_season.get("ownerMood") or {}
-    owner_total = sum(safe_float(owner.get(k)) for k in ("wins", "playoffs", "money"))
-    tiles = []
-    if math.isfinite(hype):
-        tiles.append(("Hype", f"{hype * 100:.1f}%"))
-    if att and gp_home:
-        tiles.append(("Avg attendance", f"{att / gp_home:,.0f}"))
-    if math.isfinite(cash):
-        tiles.append(("Cash", fmt_money(cash)))
-    if math.isfinite(pop):
-        tiles.append(("Market", f"{pop:.1f}M"))
-    tiles.append(("Owner mood", fmt_signed(owner_total, 1)))
-    tile_html = "".join(
-        f'<div class="vital-tile"><span>{esc(label)}</span><strong>{value}</strong></div>'
-        for label, value in tiles
-    )
-    return f'<div class="vitals-row">{tile_html}</div>'
 
 
 def team_games_strip(team: dict[str, Any], game_items: list[dict[str, Any]], teams_by_tid: dict[int, dict[str, Any]], season: int | None = None) -> str:
@@ -419,13 +408,6 @@ def _injury_cross(player: dict[str, Any]) -> str:
 DEPTH_STAT_KEYS = [("pts", "PTS"), ("trb", "REB"), ("ast", "AST"), ("stl", "STL"), ("blk", "BLK")]
 
 
-def _depth_row_label(i: int) -> str:
-    if i == 0:
-        return "Starters"
-    ordinal = {1: "2nd", 2: "3rd"}.get(i, f"{i + 1}th")
-    return f"{ordinal} String"
-
-
 def _depth_stat_line(player: dict[str, Any], season: int, start_season: int) -> str:
     """PTS/REB/AST/STL/BLK per-game chips from the player's latest season with
     games played (0-GP rows skipped); an em-dash line when he has none."""
@@ -448,42 +430,55 @@ def _depth_stat_line(player: dict[str, Any], season: int, start_season: int) -> 
     return f'<span class="depth-line">{"".join(bits)}</span>'
 
 
+def _depth_card(player: dict[str, Any], slot: str, season: int, start_season: int) -> str:
+    """One horizontal depth card: portrait on the left, name/jersey/OVR and the
+    per-game stat line stacked on the right."""
+    rating = latest_rating(player, season)
+    jersey = player.get("jerseyNumber")
+    jersey_bit = f'<span class="depth-num">#{esc(jersey)}</span>' if jersey not in (None, "") else ""
+    return (
+        f'<a class="depth-card" href="{player_url(player, "../")}">'
+        f'<span class="depth-portrait-wrap">{_roundel(player, "depth-portrait", "../")}</span>'
+        '<span class="depth-main">'
+        f'<span class="depth-card-top"><span class="depth-pos">{slot}</span>'
+        f'<span class="depth-ovr" title="Overall rating">{esc(rating.get("ovr", "—"))}</span></span>'
+        f'<span class="depth-id"><span class="depth-name">{esc(player_name(player))}</span>{_injury_cross(player)}{jersey_bit}</span>'
+        f"{_depth_stat_line(player, season, start_season)}"
+        "</span></a>"
+    )
+
+
 def depth_chart_card(roster: list[dict[str, Any]], season: int, start_season: int = 0) -> str:
-    """Depth chart as card rows: Starters / 2nd String / 3rd String (deeper rows
-    only when a position runs that deep), five cards per row (PG–C). Each card
-    is horizontal: portrait on the left, name/jersey/OVR and the per-game
-    stat line stacked on the right."""
+    """Depth chart as three card rows: Starters / 2nd String / Reserves.
+
+    A 12-man roster never fills a 5-wide grid three deep, and the position buckets
+    of a best-available draft are lumpy, so only the Starters row pads with
+    "Vacant" — there an empty bucket is real information (nobody plays that spot).
+    Below it the rows just end when a bucket runs out, and everything at depth 3+
+    collapses into one Reserves row instead of a "5th String" row holding one card.
+    """
     buckets = _position_buckets(roster, season)
-    n_rows = max(3, max((len(buckets[slot]) for slot in DEPTH_SLOTS), default=0))
-    rows_html = []
-    for i in range(n_rows):
-        cards = []
-        for slot in DEPTH_SLOTS:
-            fits = buckets[slot]
-            if i >= len(fits):
-                cards.append(
-                    f'<div class="depth-card depth-card--vacant">'
-                    '<span class="depth-portrait-wrap depth-portrait--vacant" aria-hidden="true"></span>'
-                    f'<span class="depth-main"><span class="depth-card-top"><span class="depth-pos">{slot}</span></span>'
-                    '<span class="depth-vacant-label">Vacant</span></span></div>'
-                )
-                continue
-            p = fits[i]
-            rating = latest_rating(p, season)
-            jersey = p.get("jerseyNumber")
-            jersey_bit = f'<span class="depth-num">#{esc(jersey)}</span>' if jersey not in (None, "") else ""
-            cards.append(
-                f'<a class="depth-card" href="{player_url(p, "../")}">'
-                f'<span class="depth-portrait-wrap">{_roundel(p, "depth-portrait", "../")}</span>'
-                '<span class="depth-main">'
-                f'<span class="depth-card-top"><span class="depth-pos">{slot}</span>'
-                f'<span class="depth-ovr" title="Overall rating">{esc(rating.get("ovr", "—"))}</span></span>'
-                f'<span class="depth-id"><span class="depth-name">{esc(player_name(p))}</span>{_injury_cross(p)}{jersey_bit}</span>'
-                f"{_depth_stat_line(p, season, start_season)}"
-                "</span></a>"
+    starters, second, reserves = [], [], []
+    for slot in DEPTH_SLOTS:
+        fits = buckets[slot]
+        if fits:
+            starters.append(_depth_card(fits[0], slot, season, start_season))
+        else:
+            starters.append(
+                f'<div class="depth-card depth-card--vacant">'
+                '<span class="depth-portrait-wrap depth-portrait--vacant" aria-hidden="true"></span>'
+                f'<span class="depth-main"><span class="depth-card-top"><span class="depth-pos">{slot}</span></span>'
+                '<span class="depth-vacant-label">Vacant</span></span></div>'
             )
+        if len(fits) > 1:
+            second.append(_depth_card(fits[1], slot, season, start_season))
+        reserves.extend(_depth_card(p, slot, season, start_season) for p in fits[2:])
+    rows_html = []
+    for label, cards in (("Starters", starters), ("2nd String", second), ("Reserves", reserves)):
+        if not cards:
+            continue
         rows_html.append(
-            f'<div class="depth-row"><h3 class="depth-row-label">{_depth_row_label(i)}</h3>'
+            f'<div class="depth-row"><h3 class="depth-row-label">{label}</h3>'
             f'<div class="depth-row-cards">{"".join(cards)}</div></div>'
         )
     return f"""
@@ -1119,18 +1114,20 @@ def season_results_card(team: dict[str, Any], data: dict[str, Any], teams: list[
     </section>"""
 
 
-def hero_finance_chip(tfin: dict[str, Any] | None, year: int) -> str:
-    """Hero chip: the team's projected budget for next season and how much of it
-    is still free after already-committed salaries."""
-    if not tfin:
+def hero_cap_chip(tfin: dict[str, Any] | None, cap: float, season: int) -> str:
+    """Hero chip: payroll against the cap. Under a hard cap the only money number
+    that constrains a roster is the room left under the line, so that is what
+    every team subpage carries in the hero instead of a revenue projection."""
+    if not tfin or not cap:
         return ""
-    budget = tfin["net_revenue_proj"]
-    surplus = tfin["surplus_next"]
-    sc = "delta-up" if surplus >= 0 else "delta-down"
+    payroll = tfin["payroll"]
+    room = cap - payroll
+    label = "Cap space" if room >= 0 else "Over the cap by"
+    cls = "delta-up" if room >= 0 else "delta-down"
     return f"""
     <div class="hero-finance">
-      <div class="hero-fin-row" title="Projected net revenue (win payouts + playoff-bonus EV + adjustments − tax + tax share) — the whole {year} budget."><span>{year} budget</span><strong>{fmt_money(budget)}</strong></div>
-      <div class="hero-fin-row" title="Budget minus committed {year} payroll (roster, dead money, retained salary). Negative = must shed salary."><span>Surplus vs committed</span><strong class="{sc}">{fmt_money_pm(surplus)}</strong></div>
+      <div class="hero-fin-row" title="{season} player salaries plus dead money and retained salary."><span>{season} payroll</span><strong>{fmt_money(payroll)}</strong></div>
+      <div class="hero-fin-row" title="Room under the {fmt_money(cap)} cap. A team at the cap can only add players at the league minimum."><span>{label}</span><strong class="{cls}">{fmt_money(abs(room))}</strong></div>
     </div>"""
 
 
@@ -1150,12 +1147,17 @@ def _star_points(cx: float, cy: float, r_outer: float, r_inner: float) -> str:
 
 
 def _playoff_games_to_win(data: dict[str, Any], season: int) -> int:
-    """Series length (games to win) for a season's playoffs, from the retained
-    playoff game rows; defaults to 4 when that season's games are gone."""
+    """Wins that clinch a season's Finals, from the retained playoff game rows;
+    falls back to gameAttributes.numGamesPlayoffSeries when that season's games
+    are gone. SMP II's Finals is best-of-5, so the fallback must be derived — a
+    hardcoded 4 would refuse to crown a champion who won it 3-x."""
     for game in data.get("games") or []:
         if (safe_int(game.get("season"), -1) == season and game.get("playoffs")
-                and game.get("numGamesToWinSeries") is not None):
-            return max(1, safe_int(game.get("numGamesToWinSeries"), 4))
+                and safe_int(game.get("numGamesToWinSeries")) > 0):
+            return safe_int(game.get("numGamesToWinSeries"))
+    series = get_attr_value((data.get("gameAttributes") or {}).get("numGamesPlayoffSeries"), season)
+    if isinstance(series, list) and series:
+        return max(1, safe_int(series[-1], 7) // 2 + 1)
     return 4
 
 
@@ -1309,15 +1311,23 @@ def team_hero_html(team: dict[str, Any], season: int, sorted_roster: list[dict[s
         <h1>{esc(team_full_name(team))}</h1>
         <p class="muted">{' · '.join(bits)}</p>
       </div>
-      {hero_finance_chip(tfin, season + 1)}
+      {hero_cap_chip(tfin, _cap_rules(data, season)["cap"], season)}
     </section>"""
 
 
-def finance_ledger_card(tfin: dict[str, Any] | None, year: int) -> str:
-    """Revenue ledger: win payouts + bonuses + adjustments, minus tax plus tax
-    share = net revenue, the team's whole budget for ``year``. Then tiles:
-    season balance vs this season's payroll, and committed-``year`` payroll vs
-    the budget (surplus)."""
+def finance_ledger_card(tfin: dict[str, Any] | None, year: int, cap: float | None = None) -> str:
+    """Revenue ledger: win payouts + playoff bonuses + adjustments = net revenue.
+
+    Under a HARD cap this ledger is a scoreboard, not a spending account. A per-win
+    revenue model has a ~2x spread between the best and worst team while the cap is a
+    flat ceiling, so a good team's net revenue legitimately exceeds $100M -- money it
+    can never legally spend. Reporting that as a "budget surplus" contradicted the cap
+    space shown on the same page (measured: 10 of 10 teams disagreed, average gap
+    ~$11M). So the last tile reports what the team can ACTUALLY spend, which is
+    whichever of revenue and cap room binds first -- and says which one that is.
+
+    No luxury-tax line: Basketball GM assesses no tax at all when salaryCapType
+    is "hard", so a tax row and a tax-distribution row could only ever read $0."""
     if not tfin:
         return ""
     f = tfin
@@ -1326,8 +1336,6 @@ def finance_ledger_card(tfin: dict[str, Any] | None, year: int) -> str:
         cls_attr = f' class="{cls}"' if cls else ""
         return f'<tr{cls_attr}><td class="ledger-label">{label}</td><td class="ledger-num">{now}</td><td class="ledger-num">{proj}</td></tr>'
 
-    luxtax_cell = f'<span class="delta-down">{fmt_money(-f["luxtax"])}</span>' if f["luxtax"] > 0 else "$0"
-    share_cell = f'<span class="delta-up">{fmt_money_pm(f["tax_share_in"])}</span>' if f["tax_share_in"] > 0 else "$0"
     budget_now = f'<strong>{fmt_money(f["net_revenue_now"])}</strong>'
     budget_proj = f'<strong>{fmt_money(f["net_revenue_proj"])}</strong>'
     rows = [
@@ -1343,26 +1351,34 @@ def finance_ledger_card(tfin: dict[str, Any] | None, year: int) -> str:
             adj_label += f' <span class="muted small-copy">({esc(f["adj_note"])})</span>'
         adj_cell = f'<span class="{adj_cls}">{fmt_money_pm(f["adj"])}</span>'
         rows.append(row(adj_label, adj_cell, adj_cell))
-    rows.extend([
-        row("Revenue", f'<strong>{fmt_money(f["revenue_now"])}</strong>', f'<strong>{fmt_money(f["revenue_proj"])}</strong>', cls="ledger-subtotal"),
-        row('Luxury tax <span class="muted small-copy">(over $300M)</span>', luxtax_cell, luxtax_cell),
-        row('Tax distribution <span class="muted small-copy">(under-cap share)</span>', share_cell, share_cell),
-        row(f"{year} budget <span class=\"muted small-copy\">(net revenue)</span>", budget_now, budget_proj, cls="ledger-total"),
-    ])
+    rows.append(row(f"{year} net revenue <span class=\"muted small-copy\">(earned, not spendable)</span>", budget_now, budget_proj, cls="ledger-total"))
 
     bal = f["season_balance_proj"]
     surplus = f["surplus_next"]
     bc = "delta-up" if bal >= 0 else "delta-down"
-    sc = "delta-up" if surplus >= 0 else "delta-down"
+
+    # What the team can actually add in `year`: the lower of what it earned and what
+    # the hard cap leaves. Whichever binds is what the manager needs to know.
+    committed = f["committed_next"]
+    cap_room = (cap - committed) if cap else None
+    if cap_room is None:
+        spendable, bind = surplus, "revenue"
+    elif cap_room <= surplus:
+        spendable, bind = cap_room, "the cap"
+    else:
+        spendable, bind = surplus, "revenue"
+    tip = (f"Lower of {year} net revenue and room under the hard cap, minus committed "
+           f"{year} payroll. Right now {bind} is the binding limit.")
+
     tiles = "".join([
         _tile(f"{year - 1} payroll", fmt_money(f["payroll"]),
               tip="This season's player salaries plus dead money and retained salary."),
         _tile("Season balance", fmt_money_pm(bal), cls=bc,
               tip="Projected net revenue minus this season's payroll. League average is about $0 by design."),
-        _tile(f"Committed {year} payroll", fmt_money(f["committed_next"]),
+        _tile(f"Committed {year} payroll", fmt_money(committed),
               tip=f"Salaries already on the books for {year}, incl. dead money and retained salary."),
-        _tile("Budget surplus", fmt_money_pm(surplus), cls=sc,
-              tip=f"Projected {year} budget minus committed {year} payroll. Negative = must shed salary."),
+        _tile(f"Spendable in {year}", fmt_money_pm(spendable),
+              cls="delta-up" if spendable >= 0 else "delta-down", tip=tip),
     ])
     return f"""
     <section class="card">
@@ -1377,41 +1393,73 @@ def finance_ledger_card(tfin: dict[str, Any] | None, year: int) -> str:
     </section>"""
 
 
-def luxury_tax_card(tfin: dict[str, Any] | None, league_fin: dict[str, Any]) -> str:
+def cap_sheet_card(tfin: dict[str, Any] | None, data: dict[str, Any] | None, season: int, roster_size: int, league_fin: dict[str, Any]) -> str:
+    """Cap sheet: payroll against the cap, room left, and roster spots filled.
+
+    This is what the old Luxury Tax card became. Under a hard cap there is no tax
+    to pay and no tax pool to share out — payroll simply may not cross the line —
+    so the only live questions are how much room is left and whether the team is
+    capped out, i.e. short of even the league minimum."""
     if not tfin:
         return ""
-    f = tfin
-    cap = league_fin.get("soft_cap", FIN_SOFT_CAP)
-    tiles = [_tile("Payroll", fmt_money(f["payroll"]),
+    rules = _cap_rules(data, season)
+    cap = rules["cap"]
+    if not cap:
+        return ""
+    payroll = tfin["payroll"]
+    room = cap - payroll
+    max_roster = safe_int(get_attr_value((data or {}).get("gameAttributes", {}).get("maxRosterSize"), season))
+    tiles = [_tile("Payroll", fmt_money(payroll),
                    tip="Full-season player salaries plus dead money and retained salary.")]
-    if f["over_cap"]:
-        tiles.append(_tile("Over cap by", fmt_money(f["payroll"] - cap), cls="delta-down",
-                           tip=f"Payroll above the {fmt_money(cap)} soft cap."))
-        tiles.append(_tile("Luxury tax paid", fmt_money(-f["luxtax"]), cls="delta-down",
-                           tip="$1 of tax for every $1 of payroll over the soft cap."))
-    elif f["under_cap"]:
-        tiles.append(_tile("Under cap by", fmt_money(cap - f["payroll"]), cls="delta-up",
-                           tip=f"Room below the {fmt_money(cap)} soft cap."))
-        tiles.append(_tile("Tax distribution", fmt_money_pm(f["tax_share"]), cls="delta-up",
-                           tip="Equal share of the league's collected luxury tax, paid to every under-cap team."))
+    if room >= 0:
+        tiles.append(_tile("Cap space", fmt_money(room), cls="delta-up",
+                           tip=f"Room below the {fmt_money(cap)} cap."))
     else:
-        tiles.append(_tile("At the cap", "$0"))
-    tile_html = "".join(tiles)
-    n_under = safe_int(league_fin.get("n_under"), 0)
-    note = f'League luxury-tax pool {fmt_money(league_fin.get("pool", 0))} split equally among {n_under} under-cap team{"" if n_under == 1 else "s"} ({fmt_money(league_fin.get("share", 0))} each).'
+        tiles.append(_tile("Over the cap by", fmt_money(-room), cls="delta-down",
+                           tip=f"Payroll above the {fmt_money(cap)} cap — this roster is not legal."))
+    if max_roster:
+        tiles.append(_tile("Roster", f"{roster_size} / {max_roster}",
+                           tip=f"Rosters are locked at {max_roster} players."))
+    cap_type = "hard cap" if rules["hard"] else "soft cap"
+    if room < 0:
+        note = f"Payroll is over the {cap_type} — this roster cannot be submitted as-is."
+    elif rules["minimum"] and room < rules["minimum"]:
+        note = f"Capped out: with less than the {fmt_money(rules['minimum'])} minimum in space, this team cannot add a player at all."
+    else:
+        note = f"No Bird rights and no exceptions — every signing, re-signing and trade has to land under {fmt_money(cap)}."
+    payrolls = [t["payroll"] for t in (league_fin.get("teams") or {}).values()]
+    if payrolls:
+        note += f" League average payroll is {fmt_money(sum(payrolls) / len(payrolls))}."
     return f"""
     <section class="card">
-      <div class="section-title-row"><h2>Luxury Tax</h2><span class="muted small-copy">soft cap {fmt_money(cap)} · $1 per $1 over</span></div>
-      <div class="vitals-row">{tile_html}</div>
+      <div class="section-title-row"><h2>Cap Sheet</h2><span class="muted small-copy">{esc(cap_type)} {fmt_money(cap)}</span></div>
+      <div class="vitals-row">{"".join(tiles)}</div>
       <p class="muted small-copy">{note}</p>
     </section>"""
 
 
-def finance_rules_card() -> str:
+def finance_rules_card(data: dict[str, Any] | None = None, season: int | None = None) -> str:
     stacked = FIN_PLAYOFF + FIN_FINALS + FIN_CHAMP
-    # 225 league wins/season (45 games x 10 teams / 2); 4 playoff berths,
-    # 2 finalists, 1 champion -> league-average net revenue.
-    avg_budget = (225 * FIN_PER_WIN + 4 * FIN_PLAYOFF + 2 * FIN_FINALS + FIN_CHAMP) / 10
+    # League wins/season = numGames * numTeams / 2 -- derived, not hardcoded, because
+    # SMP I ran 45 games (225 wins) and SMP II runs 36 (180). Falls back to SMP II's
+    # shape if the export can't be read.
+    n_teams = len(active_team_ids(data.get("teams") or [])) if data else 10
+    games = regular_season_length(data, season) if (data and season is not None) else 36
+    league_wins = (games * n_teams) // 2 if games and n_teams else 180
+    avg_budget = (league_wins * FIN_PER_WIN + 4 * FIN_PLAYOFF + 2 * FIN_FINALS + FIN_CHAMP) / (n_teams or 10)
+    # Cap copy comes off gameAttributes, not a FIN_* constant, so the rules card
+    # cannot state a cap the league does not actually enforce.
+    rules = _cap_rules(data, season if season is not None else 0)
+    cap = rules["cap"]
+    cap_label = f'{fmt_money(cap)} {"hard" if rules["hard"] else "soft"} cap' if cap else "Hard cap"
+    cap_line = (f"<strong>{cap_label}.</strong> "
+                "You cannot sign, trade for, or re-sign your way past it — there is no Bird exception")
+    min_line = ("The only move available to a capped-out team is a <strong>"
+                f'{fmt_money(rules["minimum"])} minimum contract</strong>' if rules["minimum"]
+                else "The only move available to a capped-out team is a <strong>minimum contract</strong>")
+    budget_note = (f"League-average budget is {_fin_mil(avg_budget)}, "
+                   f'{"just under" if avg_budget <= cap else "about"} the cap.' if cap
+                   else f"League-average budget is {_fin_mil(avg_budget)}.")
     return f"""
     <section class="card">
       <div class="section-title-row"><h2>How Finances Work</h2></div>
@@ -1425,13 +1473,13 @@ def finance_rules_card() -> str:
           <p class="muted small-copy">Bonuses stack once clinched — the champion banks +{_fin_mil(stacked)}.</p>
         </div>
         <div>
-          <h3>Tax &amp; Budget</h3>
+          <h3>Cap &amp; Budget</h3>
           <ul class="fin-list">
-            <li>Luxury tax <strong>$1 per $1</strong> of payroll over the <strong>{fmt_money(FIN_SOFT_CAP)}</strong> soft cap</li>
-            <li>Collected tax is split equally among under-cap teams</li>
-            <li>Net revenue <span class="muted small-copy">(revenue − tax + tax share)</span> is the whole next-season budget — no carried cash</li>
+            <li>{cap_line}</li>
+            <li>{min_line}</li>
+            <li>Net revenue is the whole next-season budget — no carried cash</li>
           </ul>
-          <p class="muted small-copy">League-average budget is {_fin_mil(avg_budget)}, just under the cap.</p>
+          <p class="muted small-copy">{budget_note}</p>
         </div>
       </div>
     </section>"""
@@ -1595,14 +1643,21 @@ def render_team_games_page(team: dict[str, Any], roster: list[dict[str, Any]], t
     playoffs_table = team_playoffs_table(team, playoff_items, teams_by_tid, season) if playoff_items else ""
     profile = team_quarter_profile(team, data, season, teams_by_tid) if data else ""
     factors = four_factors_card(data, team, teams, season) if data else ""
+    sections = [strip, games_table, playoffs_table, factors, profile]
+    if not any(s.strip() for s in sections):
+        # Every section correctly renders "" before the first tip-off, which left
+        # the subnav pointing at a literally blank page in year one.
+        games = regular_season_length(data, season) if data else 0
+        length = f"{games}-game " if games else ""
+        sections = [f"""
+    <section class="card">
+      <div class="section-title-row"><h2>Games</h2></div>
+      <p class="muted">No games played yet — the {length}{season} season has not started.</p>
+    </section>"""]
     body = f"""
     {team_hero_html(team, season, sorted_roster, teams, tfin, data=data)}
     {team_subnav(team, "games")}
-    {strip}
-    {games_table}
-    {playoffs_table}
-    {factors}
-    {profile}
+    {''.join(sections)}
     """
     return page_html(f"{team_full_name(team)} — Games", team_scope_html(team, body), teams, root="../", active=f"team-{team.get('tid')}")
 
@@ -1612,10 +1667,10 @@ def render_team_finances_page(team: dict[str, Any], roster: list[dict[str, Any]]
     body = f"""
     {team_hero_html(team, season, sorted_roster, teams, tfin, data=data)}
     {team_subnav(team, "finances")}
-    {finance_ledger_card(tfin, season + 1)}
-    {luxury_tax_card(tfin, league_fin or {})}
+    {cap_sheet_card(tfin, data, season, len(sorted_roster), league_fin or {})}
+    {finance_ledger_card(tfin, season + 1, _cap_rules(data, season)['cap'])}
     {team_finances_table(sorted_roster, season, data=data, tid=safe_int(team.get("tid")))}
-    {finance_rules_card()}
+    {finance_rules_card(data, season)}
     """
     return page_html(f"{team_full_name(team)} — Finances", team_scope_html(team, body), teams, root="../", active=f"team-{team.get('tid')}")
 

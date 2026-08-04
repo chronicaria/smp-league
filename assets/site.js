@@ -2559,8 +2559,8 @@
         const over = after > tax;
         const room = tax - after;
         const note = over
-          ? fmtM(-room) + ' over the ' + fmtM(tax) + ' tax line'
-          : fmtM(room) + ' under the ' + fmtM(tax) + ' tax line';
+          ? fmtM(-room) + ' OVER the ' + fmtM(tax) + ' cap — trade is illegal'
+          : fmtM(room) + ' under the ' + fmtM(tax) + ' cap';
         return '<div class="tfin-team' + (over ? ' tfin-team--over' : '') + '">'
           + '<div class="tfin-head"><strong>' + esc(team.abbrev) + '</strong>'
           + '<span class="tfin-nums">' + fmtM(before) + ' → <strong>' + fmtM(after) + '</strong></span></div>'
@@ -2903,9 +2903,9 @@
     const count = picked.length;
     const ovr = count ? O.roundOvr(O.teamOvrRaw(effectiveOvrs())) : null;
     const salary = picked.reduce((sum, p) => sum + (p.salary || 0), 0);
-    const taxLine = payload.finance.tax_line;
-    const overTax = salary > taxLine;
-    const gap = Math.abs(salary - taxLine);
+    const capLine = payload.finance.tax_line;   // $100M hard cap
+    const overCap = salary > capLine;
+    const gap = Math.abs(salary - capLine);
     let avgWin = null;
     if (matchupRows.length) {
       avgWin = matchupRows.reduce((sum, r) => sum + (r.home + r.away) / 2, 0) / matchupRows.length;
@@ -2925,8 +2925,9 @@
     summaryEl.innerHTML = '<div class="ll-tiles">'
       + tile('Lineup OVR', ovr === null ? '—' : String(ovr), ovrSub, '')
       + tile('Total salary', fmtMoney(salary),
-             fmtMoney(gap) + (overTax ? ' over' : ' under') + ' the ' + fmtMoney(taxLine) + ' tax line',
-             overTax ? 'll-over-tax' : '')
+             overCap ? fmtMoney(gap) + ' OVER the ' + fmtMoney(capLine) + ' cap — illegal roster'
+                     : fmtMoney(gap) + ' under the ' + fmtMoney(capLine) + ' cap',
+             overCap ? 'll-over-tax' : '')
       + tile('Average win %', avgWin === null ? '—' : fmtPct(avgWin),
              avgWin === null ? 'pick five players' : 'home/road average vs all ' + matchupRows.length + ' rosters', '')
       + '</div>';
