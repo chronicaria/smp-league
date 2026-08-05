@@ -94,21 +94,25 @@ def _chart_distance(a: str, b: str) -> float:
 # ---------------------------------------------------------------------------
 
 # abbrev -> (primary, secondary, chart). on_primary is computed below.
-# NOTE: QUE chart adjusted from the plan's #F5A623 -> #E4950C (deeper amber):
-# #F5A623 sat only 16.5 heuristic-units from ITH's #FFD23F yellow (min is 24),
-# and the obvious swap to QUE's own #F58426 collided with DUR's #E0531F.
-# #E4950C is the smallest move that clears both (>= 26 from every other team).
+# ONE HUE FAMILY PER TEAM, deliberately.
+#
+# The SMP I table put five of ten primaries in the same dark-navy band (DUR #1B2440,
+# ITH #232F55, GOO #1F2E4E, MAN #1C3557, QUE #23305A) so half the league looked
+# identical on team pages, dots and headers. Every primary below now sits in its own
+# hue family -- blue, teal, green, gold, brown, red, magenta, purple, slate, and one
+# deliberately achromatic near-black -- and the chart colors are spread even wider,
+# because those are what the scatter and the standings dots actually key on.
 _BASE = {
-    "ROC": ("#4A3B5C", "#C13B33", "#9966CC"),
-    "WAL": ("#1E4230", "#E8B321", "#8B5E34"),
-    "CAM": ("#2C5545", "#EAE4C8", "#2F8C57"),
-    "DUR": ("#1B2440", "#E0531F", "#E0531F"),
-    "TOR": ("#1D4F91", "#6FA8DC", "#4C8CE0"),
-    "ITH": ("#232F55", "#FFC72C", "#FFD23F"),
-    "GOO": ("#1F2E4E", "#F2A900", "#56719F"),
-    "MAN": ("#1C3557", "#C8102E", "#D22B3E"),
-    "STO": ("#1C5E52", "#2FA98C", "#2FA98C"),
-    "QUE": ("#23305A", "#F58426", "#E4950C"),
+    "TOR": ("#1D4F91", "#7FB2E5", "#3B82F6"),   # blue
+    "CAM": ("#0F766E", "#7FD8CF", "#14B8A6"),   # teal
+    "STO": ("#15803D", "#86E5A4", "#22C55E"),   # green
+    "ITH": ("#8A6508", "#FFD23F", "#EAB308"),   # gold
+    "WAL": ("#7A3E12", "#E0A76B", "#8B5A2B"),   # brown
+    "GOO": ("#B01818", "#FF9A9A", "#EF4444"),   # red
+    "ROC": ("#9D174D", "#F9A8C8", "#EC4899"),   # magenta
+    "MAN": ("#6B21A8", "#D4A5F5", "#A855F7"),   # purple
+    "QUE": ("#455A70", "#B9C7D6", "#93A9C0"),   # slate
+    "DUR": ("#242A31", "#E0531F", "#F97316"),   # near-black w/ orange accent
 }
 
 # SMP II's tid assignment, in tid order — the compiled-in default so the module

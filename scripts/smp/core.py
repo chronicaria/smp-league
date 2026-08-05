@@ -514,16 +514,21 @@ def active_players(data: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def free_agents(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Every unsigned player. No quality filter.
+def is_draftable(player: dict[str, Any], season: int | None = None) -> bool:
+    """Is this player worth showing on the draft board / free-agent wire?
 
-    SMP I hid anyone under 50 ovr *and* under 50 pot, which concealed 57 of 135 free
-    agents. On the SMP II pool that filter hides 250 of 376 -- including real rotation
-    players -- so the page would lie about what is actually signable. With a 12-man
-    roster and no cap, the cheap end of the wire is exactly what a cash-poor team
-    needs to see.
+    Keep anyone with ovr >= 50 OR pot >= 50 -- a useful player now, or a project who
+    might become one. Only players who fail BOTH are hidden. This is a DISPLAY filter
+    only: the league JSON keeps every player, so nothing is lost from the export.
     """
-    return [p for p in active_players(data) if p.get("tid") == FREE_AGENT_TID]
+    r = latest_rating(player, season) if season is not None else latest_rating(player)
+    return safe_int(r.get("ovr")) >= 50 or safe_int(r.get("pot")) >= 50
+
+
+def free_agents(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Unsigned players worth listing -- see is_draftable."""
+    return [p for p in active_players(data)
+            if p.get("tid") == FREE_AGENT_TID and is_draftable(p)]
 
 
 CANONICAL_POS = ("PG", "SG", "SF", "PF", "C")

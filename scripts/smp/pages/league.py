@@ -338,11 +338,16 @@ def rafters_strip_html(data: dict[str, Any], teams: list[dict[str, Any]]) -> str
 
 
 def fa_asking_price(player: dict[str, Any], season: int) -> float:
-    """Starting bid in BBGM thousands: the model's annual value on a one-year deal."""
+    """Starting bid in BBGM thousands: the model's annual value on a one-year deal.
+
+    Rounded to a whole $1M, matching how every contract in the league is priced --
+    the wire should not quote a precision the salary scale does not have.
+    """
     rating = latest_rating(player, season)
     born = (player.get("born") or {}).get("year")
     age_val = (season - born) if isinstance(born, int) else 25
-    return fa_salary_by_length(safe_int(rating.get("ovr")), safe_int(rating.get("pot")), age_val)[0] * 1000
+    raw = fa_salary_by_length(safe_int(rating.get("ovr")), safe_int(rating.get("pot")), age_val)[0] * 1000
+    return float(max(1, round(raw / 1000)) * 1000)
 
 
 def fa_market_is_priced(bids: list[float]) -> bool:

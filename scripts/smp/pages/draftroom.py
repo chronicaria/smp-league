@@ -21,6 +21,7 @@ from typing import Any
 
 from ..core import (
     RATING_GROUP_STARTS,
+    is_draftable,
     TEAM_RATING_RANK_KEYS,
     active_teams_for_season,
     age,
@@ -153,7 +154,8 @@ def pool_html(players: list[dict[str, Any]], season: int) -> str:
         r = latest_rating(p, season)
         return (-safe_int(r.get("ovr")), -safe_int(r.get("pot")), player_name(p))
 
-    ordered = sorted(players, key=board_sort)
+    # Hide players who are under 50 in BOTH ovr and pot -- no use now, no upside later.
+    ordered = sorted((p for p in players if is_draftable(p, season)), key=board_sort)
 
     ranges: dict[str, tuple[float, float]] = {}
     for key, _ in TEAM_RATING_RANK_KEYS:
@@ -188,7 +190,8 @@ def top_board_html(players: list[dict[str, Any]], season: int, limit: int = 12) 
         return (-safe_int(r.get("ovr")), -safe_int(r.get("pot")), player_name(p))
 
     cards = []
-    for rank, p in enumerate(sorted(players, key=key)[:limit], 1):
+    eligible = [p for p in players if is_draftable(p, season)]
+    for rank, p in enumerate(sorted(eligible, key=key)[:limit], 1):
         r = latest_rating(p, season)
         amount = safe_float((p.get("contract") or {}).get("amount"), 0.0)
         cards.append(
@@ -215,12 +218,13 @@ def render_league_draft_page(data: dict[str, Any], teams: list[dict[str, Any]],
     active = active_teams_for_season(teams, season)
     rounds = _rounds(data, season)
     total = rounds * len(active)
+    eligible = [p for p in pool if is_draftable(p, season)]
     body = f"""
     <section class="page-hero">
       <div>
         <h1>League Draft</h1>
         <p class="muted">{rounds} rounds · {len(active)} teams · {total} picks · snake order —
-        every player in the league is on the board</p>
+        {len(eligible)} eligible players on the board</p>
       </div>
     </section>
     {top_board_html(pool, season)}

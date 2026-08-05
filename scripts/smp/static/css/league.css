@@ -141,17 +141,17 @@ a.rafters-flag:hover .rafters-pennant, a.rafters-flag:focus-visible .rafters-pen
   min-width: 5.4rem;
   padding: .38rem .45rem;
   border: 1px solid var(--line);
-  border-left: 3px solid var(--slot-team);
+  border-left: 4px solid var(--slot-team);
   border-radius: .15rem;
-  background: color-mix(in srgb, var(--slot-team) 9%, var(--panel-2));
+  background: color-mix(in srgb, var(--slot-team) 26%, var(--panel-2));
   vertical-align: top;
   line-height: 1.25;
 }
-.dr-slot-team { display: block; font-size: .68rem; font-weight: 700; letter-spacing: .04em; color: var(--muted); }
+.dr-slot-team { display: block; font-size: .68rem; font-weight: 700; letter-spacing: .04em; color: var(--text); opacity: .85; }
 .dr-slot-open { display: block; font-size: .78rem; color: var(--muted-2, var(--muted)); font-variant-numeric: tabular-nums; }
 .dr-slot-player { display: block; font-size: .78rem; font-weight: 600; color: var(--text); text-decoration: none; }
 .dr-slot-player:hover { color: var(--accent); }
-.dr-slot--filled { background: color-mix(in srgb, var(--slot-team) 20%, var(--panel-2)); }
+.dr-slot--filled { background: color-mix(in srgb, var(--slot-team) 48%, var(--panel-2)); }
 .dr-pool-portrait { width: 32px; height: 32px; border-radius: 50%; margin-right: .45rem; vertical-align: middle; }
 
 @media (max-width: 720px) {

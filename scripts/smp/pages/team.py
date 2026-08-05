@@ -80,9 +80,8 @@ from ..finance import (
     FIN_CHAMP,
     FIN_FINALS,
     FIN_BASE,
+    FIN_PER_WIN,
     FIN_PLAYOFF_WIN,
-    FIN_WIN_LADDER,
-    win_ladder_revenue,
     FIN_PLAYOFF,
     fmt_money_pm,
     team_finances_table,
@@ -1341,11 +1340,8 @@ def finance_ledger_card(tfin: dict[str, Any] | None, year: int, cap: float | Non
 
     budget_now = f'<strong>{fmt_money(f["net_revenue_now"])}</strong>'
     budget_proj = f'<strong>{fmt_money(f["net_revenue_proj"])}</strong>'
-    base = f.get("base_rev", 0)
     rows = [
-        row('National pot <span class="muted small-copy">(every team, before a ball is thrown)</span>',
-            fmt_money_pm(base), fmt_money_pm(base)),
-        row('Win payouts <span class="muted small-copy">(ladder — later wins pay less)</span>',
+        row(f'Win payouts <span class="muted small-copy">({_fin_mil(FIN_PER_WIN)} × W)</span>',
             f'{fmt_money_pm(f["win_rev_now"])} <span class="muted small-copy">({f["won"]} W)</span>',
             f'{fmt_money_pm(f["win_rev_proj"])} <span class="muted small-copy">(proj {fmt_number(f["proj_w"], 1)} W)</span>'),
         row('Postseason <span class="muted small-copy">(berth · per win · finals · title)</span>', fmt_money_pm(f["earned_playoff"]), fmt_money_pm(f["proj_playoff"])),
@@ -1438,24 +1434,18 @@ def cap_sheet_card(tfin: dict[str, Any] | None, data: dict[str, Any] | None, sea
 
 def finance_rules_card(data: dict[str, Any] | None = None, season: int | None = None) -> str:
     stacked = FIN_PLAYOFF + 6 * FIN_PLAYOFF_WIN + FIN_FINALS + FIN_CHAMP
-    # "$2.2M for wins 1-9, then $1.6M, $1.1M, $0.6M" -- read straight off the ladder
-    _lo, _rungs = 0, []
-    for _w, _rate in FIN_WIN_LADDER:
-        _rungs.append(f"{_fin_mil(_rate)} for wins {_lo + 1}-{_lo + _w}")
-        _lo += _w
-    ladder_copy = ", then ".join(_rungs)
+
     # League wins/season = numGames * numTeams / 2 -- derived, not hardcoded, because
     # SMP I ran 45 games (225 wins) and SMP II runs 36 (180). Falls back to SMP II's
     # shape if the export can't be read.
     n_teams = len(active_team_ids(data.get("teams") or [])) if data else 10
     games = regular_season_length(data, season) if (data and season is not None) else 36
     league_wins = (games * n_teams) // 2 if games and n_teams else 180
-    # Average budget under the ladder: every team banks the flat pot, and the league's
-    # wins are shared out, so the average team's ladder payout is the payout at
-    # league_wins / n_teams wins. Postseason money is a fixed pool spread over the field.
+    # Average budget: the league's wins are shared out, so an average team wins
+    # league_wins / n_teams. Postseason money is a fixed pool spread over the field.
     avg_wins = league_wins / (n_teams or 10)
     post_pool = 4 * FIN_PLAYOFF + 12 * FIN_PLAYOFF_WIN + 2 * FIN_FINALS + FIN_CHAMP
-    avg_budget = FIN_BASE + win_ladder_revenue(avg_wins) + post_pool / (n_teams or 10)
+    avg_budget = FIN_BASE + FIN_PER_WIN * avg_wins + post_pool / (n_teams or 10)
     # Cap copy comes off gameAttributes, not a FIN_* constant, so the rules card
     # cannot state a cap the league does not actually enforce.
     rules = _cap_rules(data, season if season is not None else 0)
@@ -1472,11 +1462,11 @@ def finance_rules_card(data: dict[str, Any] | None = None, season: int | None = 
         <div>
           <h3>Revenue</h3>
           <ul class="fin-list">
-            <li>Everyone banks <strong>{_fin_mil(FIN_BASE)}</strong> before a ball is thrown</li>
-            <li>Wins pay on a <strong>ladder</strong>: {ladder_copy}</li>
-            <li>Playoff berth <strong>+{_fin_mil(FIN_PLAYOFF)}</strong> · each playoff win <strong>+{_fin_mil(FIN_PLAYOFF_WIN)}</strong> · Finals <strong>+{_fin_mil(FIN_FINALS)}</strong> · Title <strong>+{_fin_mil(FIN_CHAMP)}</strong></li>
+            <li>Every win <strong>+{_fin_mil(FIN_PER_WIN)}</strong> — all 36 weigh the same</li>
+            <li>Playoff berth <strong>+{_fin_mil(FIN_PLAYOFF)}</strong> · each playoff win <strong>+{_fin_mil(FIN_PLAYOFF_WIN)}</strong></li>
+            <li>Finals <strong>+{_fin_mil(FIN_FINALS)}</strong> · Title <strong>+{_fin_mil(FIN_CHAMP)}</strong></li>
           </ul>
-          <p class="muted small-copy">A full title run banks +{_fin_mil(stacked)} on top of the ladder. Later wins pay less on purpose — running away with the league does not buy you a bigger war chest.</p>
+          <p class="muted small-copy">A full title run banks +{_fin_mil(stacked)} on top of the win money. There is no appearance money — win nothing and you earn nothing.</p>
         </div>
         <div>
           <h3>Spending</h3>

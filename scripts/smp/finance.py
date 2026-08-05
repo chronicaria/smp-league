@@ -153,36 +153,35 @@ def team_finances_table(roster: list[dict[str, Any]], season: int, data: dict[st
 # SMP II has NO SALARY CAP and NO LUXURY TAX. Revenue is the only limit on spending,
 # which makes this curve the single most important balance lever in the league.
 #
-# THE LADDER. A flat national pot every team receives, plus a CONCAVE win payout: wins
-# are sorted into blocks of nine and each block pays less than the one before.
-#   wins  1-9  -> $2.2M each
-#   wins 10-18 -> $1.6M each
-#   wins 19-27 -> $1.1M each
-#   wins 28-36 -> $0.6M each
+# Every dollar is earned on the court. There is no national pot and no appearance money:
+# a team that wins nothing earns nothing.
 #
-# The concavity is the whole anti-spiral mechanism. A naive linear per-win model solving
-# 180 * W = $1,000M pays $5.56M/win, which makes a 28-win title team earn ~$227M against
-# an 8-win team's ~$36M -- a 6.3x spread. With no cap that is a rich-get-richer loop, and
-# SMP I already had a dynasty complaint. The ladder pays the 30th win about a quarter of
-# what the 3rd win pays, so pulling away from the field stops buying you much.
-#   Measured best/worst: 28-8 champion $127.7M vs 6-30 team $75.2M = 1.70x.
+#   every regular-season win  +$4M   (all 36 weigh the same -- no ladder, no diminishing)
+#   playoff berth             +$20M
+#   each playoff win          +$8M
+#   reaching the finals       +$25M
+#   winning the title         +$50M
 #
 # Derivation to the $1,000M league target (10 teams x $100M average payroll):
-#   postseason pool = 4 berths*4 + ~12.3 playoff wins*1.5 + 2 finalists*3 + 1 title*5
-#                   = $45.4M
-#   win ladder over a realistic 10-team spread = $335-347M
-#   flat pot = (1000 - 340 - 45) / 10 = ~$62M per team
-# Verified: a balanced .500 league pays $100.7M/team, a realistic spread $99.5M/team.
-FIN_BASE = 62000        # flat national pot every team banks before a ball is thrown
-FIN_WIN_LADDER = ((9, 2200), (9, 1600), (9, 1100), (9, 600))   # (block width, $ per win)
-FIN_PLAYOFF = 4000      # +$4M for a playoff berth (clinch-gated)
-FIN_PLAYOFF_WIN = 1500  # +$1.5M per playoff game won
-FIN_FINALS = 3000       # +$3M for reaching the finals
-FIN_CHAMP = 5000        # +$5M for the title (a max title run banks 4+6*1.5+3+5 = $21M)
-
-# Reported so the finance page can quote a headline "what a win is worth" without
-# implying every win pays the same. This is the FIRST rung, i.e. the best case.
-FIN_PER_WIN = FIN_WIN_LADDER[0][1]
+#   180 league wins x $4M                                   = $720M
+#   postseason pool = 4 berths*20 + ~12 wins*8 + 2*25 + 50   = $276M
+#   league total $996M -> $99.6M average. An average 18-win team earns
+#   18*4 = $72M on the court plus ~$27.6M of postseason expected value.
+#
+# THE TRADEOFF, stated plainly: a flat per-win rate with a heavy postseason makes the
+# revenue spread WIDE. A 28-8 champion banks 28*4 + 20 + 6*8 + 25 + 50 = $255M against
+# a 8-28 team's $32M -- an 8.0x gap, versus 1.6x under the concave ladder this replaced.
+# With no salary cap, revenue IS spending power, so that gap compounds year over year.
+# It only actually bites if the commissioner enforces "spend no more than you earned" --
+# nothing in Basketball GM reads these numbers. If the league does enforce it and the
+# standings start ossifying, the cheapest brake is to raise FIN_BASE off zero; every
+# dollar of base compresses the ratio without touching the per-win rate.
+FIN_BASE = 0            # no appearance money: win nothing, earn nothing
+FIN_PER_WIN = 4000      # +$4M per regular-season win, every win equal
+FIN_PLAYOFF = 20000     # +$20M for a playoff berth (clinch-gated)
+FIN_PLAYOFF_WIN = 8000  # +$8M per playoff game won
+FIN_FINALS = 25000      # +$25M for reaching the finals
+FIN_CHAMP = 50000       # +$50M for the title (a full run banks 20+48+25+50 = $143M)
 
 # No cap and no tax. Kept as a display anchor only: the target average payroll, which
 # is what price_contracts.py calibrates the salary curve against.
@@ -191,14 +190,9 @@ FIN_CAP = 0             # 0 == uncapped; league_cap() still reads the export
 FIN_SOFT_CAP = FIN_TARGET_PAYROLL  # ponytail: import alias for pages/lineup.py
 
 
-def win_ladder_revenue(wins: float) -> float:
-    """Concave payout for ``wins`` regular-season wins. See FIN_WIN_LADDER."""
-    total, left = 0.0, max(0.0, min(float(wins), sum(w for w, _ in FIN_WIN_LADDER)))
-    for width, rate in FIN_WIN_LADDER:
-        take = min(left, width)
-        total += take * rate
-        left -= take
-    return total
+def win_revenue(wins: float) -> float:
+    """Regular-season win money. Flat rate -- every win is worth the same."""
+    return FIN_PER_WIN * max(0.0, float(wins))
 
 
 def league_cap(data: dict[str, Any] | None, season: int | None = None) -> float:
@@ -422,11 +416,11 @@ def compute_league_finances(data: dict[str, Any], teams: list[dict[str, Any]], p
             # anchor so pages can show "vs league average" instead of "vs the cap".
             "cap": cap, "cap_room": cap - payroll, "over_cap": False,
             "base_rev": FIN_BASE,
-            "win_rev_now": win_ladder_revenue(won), "win_rev_proj": win_ladder_revenue(proj_w),
+            "win_rev_now": win_revenue(won), "win_rev_proj": win_revenue(proj_w),
             "earned_playoff": earned_playoff, "proj_playoff": proj_playoff,
             "proj_w": proj_w, "po": po_p, "finals": fin_p, "champ": champ_p,
-            "revenue_now": FIN_BASE + win_ladder_revenue(won) + earned_playoff + adj,
-            "revenue_proj": FIN_BASE + win_ladder_revenue(proj_w) + proj_playoff + adj,
+            "revenue_now": FIN_BASE + win_revenue(won) + earned_playoff + adj,
+            "revenue_proj": FIN_BASE + win_revenue(proj_w) + proj_playoff + adj,
         }
     for tid, f in fin.items():
         # Net revenue = the team's whole budget for next season. Nothing is netted

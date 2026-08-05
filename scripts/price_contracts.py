@@ -147,10 +147,16 @@ def draft_value(p: dict) -> float:
     return p["ovr"] + max(0, p["pot"] - p["ovr"]) * max(0, 30 - p["age"]) / 12.0
 
 
+SALARY_STEP = 1_000     # whole $1M increments -- no decimals anywhere on the site
+
+
 def price(ovr: int, pot: int, age: int, scale: float) -> int:
     yrs = contract_length(ovr, pot, age)
     amount = scale * _raw(ovr, age) * DURATION_PREMIUM[yrs]
-    amount = int(round(amount / 10)) * 10          # BBGM rounds contracts to 10s
+    # Round to the nearest whole $1M. Done INSIDE the priced value (not as a display
+    # step) so solve_scale bisects on the number actually written to the export and the
+    # league total still lands on target.
+    amount = int(round(amount / SALARY_STEP)) * SALARY_STEP
     return min(max(amount, MIN_CONTRACT), MAX_CONTRACT)
 
 
