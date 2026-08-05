@@ -1,31 +1,43 @@
 #!/usr/bin/env python3
 """
-Price every player in an SMP II league export for the $100M hard-cap era.
+Price every player in an SMP II league export at FAIR value.
 
-Why this exists
----------------
-SMP I's contracts were flat: median $18M against a $300M cap, i.e. every player cost
-about the same. Nothing bound, salary-matched trades were trivial, and free agency beat
-trading because the marginal free agent was as good as the marginal roster player and
-cost 0.33% of the cap. This script replaces that with an exponential curve so that stars
-are genuinely expensive and depth is genuinely cheap.
+The goal
+--------
+A price should already contain everything the league knows about a player, so that
+drafting well means beating the model -- not collecting a bonus for taking the obvious
+name. Under the old age-band pricing, rookie LeBron cost $7M against $50M of eventual
+value: whoever held pick 1 banked ~$43M/yr of surplus for doing the obvious thing, and
+the correct strategy collapsed into "hoard cheap young talent."
 
-The curve
+The model
 ---------
-    salary = A * 2^((ovr - PIVOT) / WIDTH) * age_factor(age)
+    salary = A * mean over contract years of 2^((E[ovr_t] - PIVOT) / WIDTH)
+             * duration_premium(years)
+
+E[ovr_t] is the player's EXPECTED overall in each year of the deal, from a Monte Carlo
+projection of their actual 15 sub-ratings (scripts/projections.py, a port of zengm's
+develop.ts), seeded fixed so a rebuild reprices identically.
 
   * doubling every WIDTH points of ovr is what creates the star premium
-  * age_factor makes YOUNG high-potential players CHEAP. That is deliberate: it is the
-    rookie-scale analogue, and it is what makes drafting for potential produce surplus
-    value. Rookie LeBron (20yo, 67 ovr / 81 pot) prices at ~$6M and becomes a star on
-    that deal; 27-year-old Peja (75/75) costs ~$35M for production he already has.
-  * A is SOLVED, not chosen, so that total league payroll hits TARGET_LEAGUE_PAYROLL.
-    Re-solving each time is what keeps the curve calibrated as the talent pool drifts.
+  * there is NO age_factor any more. Aging used to be a hand-tuned multiplier on age
+    bands; the projection now carries it per player, which is both more accurate and
+    strictly more expressive. An age band cannot say "this 28-year-old falls off a
+    cliff and that one doesn't" -- and that gap was the largest mispricing in the old
+    model (Kevin Garnett, 73/76, priced $31M against $18M of fair value).
+  * A is SOLVED by bisection, not chosen, so league payroll hits TARGET_LEAGUE_PAYROLL.
+
+What this leaves for managers: the projection is an EXPECTATION, and development is
+stochastic (realPlayerDeterminism is 0, so nobody follows their real career). The edge
+is in reading who beats their projection, in fit, and in trading -- not in knowing that
+LeBron is good.
 
 Contract length is assigned from age and upside so expirations stagger instead of all
 landing in one summer. BBGM stores a contract as a single flat {amount, exp} -- there is
 no native per-year structure -- so length is the only lever, and a duration premium is
-applied to reflect that a short deal on a good player is worth more per year.
+applied because a short deal on a good player is worth more per year.
+
+Requires numpy (for scripts/projections.py).
 
 Usage
 -----
@@ -56,24 +68,8 @@ PIVOT = 60      # ovr at which the curve passes through A
 WIDTH = 5       # salary doubles every WIDTH points of ovr
 
 
-def age_factor(age: int) -> float:
-    """Young = cheap (unproven upside is the drafter's surplus). Old = cheap (decline risk).
-
-    Peak-age players pay full freight because you are buying production you can bank on.
-    """
-    if age <= 21:
-        return 0.55
-    if age <= 23:
-        return 0.70
-    if age <= 25:
-        return 0.85
-    if age <= 31:
-        return 1.00
-    if age <= 33:
-        return 0.90
-    if age <= 35:
-        return 0.75
-    return 0.60
+MC_SIMS = 400           # Monte Carlo paths per player
+MC_SEED = 20040101      # fixed: prices must be identical on every rebuild
 
 
 def contract_length(ovr: int, pot: int, age: int) -> int:
@@ -105,37 +101,89 @@ def contract_length(ovr: int, pot: int, age: int) -> int:
 DURATION_PREMIUM = {1: 1.25, 2: 1.10, 3: 1.00, 4: 0.95}
 
 
-def _raw(ovr: int, age: int) -> float:
-    return (2.0 ** ((ovr - PIVOT) / WIDTH)) * age_factor(age)
+SALARY_STEP = 1_000     # whole $1M increments -- no decimals anywhere on the site
+
+
+def value_at(ovr_value: float, scale: float) -> float:
+    """The league's value curve at a given OVR. Age-neutral on purpose.
+
+    Aging used to be a hand-tuned age_factor multiplier. It isn't any more: the Monte
+    Carlo projection below carries aging per player, from their actual sub-ratings,
+    which is both more accurate and impossible to express as an age band.
+    """
+    return scale * (2.0 ** ((ovr_value - PIVOT) / WIDTH))
+
+
+def project_paths(players: list[dict], n_sims: int = MC_SIMS) -> None:
+    """Attach each player's EXPECTED ovr for every year of their contract.
+
+    Uses the repo's own Monte Carlo development engine (scripts/projections.py, a port
+    of zengm's develop.ts), seeded deterministically so prices are identical on every
+    rebuild. Sets p["path"] = [ovr_now, ovr_yr1, ... ovr_yrN].
+    """
+    from projections import RATINGS, develop_paths      # needs numpy
+
+    for i, p in enumerate(players):
+        yrs = contract_length(p["ovr"], p["pot"], p["age"])
+        ratings = p.get("ratings")
+        if not ratings:
+            # No sub-ratings to develop from: hold the current ovr flat.
+            p["years"], p["path"] = yrs, [float(p["ovr"])] * (yrs + 1)
+            continue
+        paths = develop_paths({k: ratings[k] for k in RATINGS}, p["age"], yrs,
+                              n_sims, seed=MC_SEED + i)
+        p["years"] = yrs
+        p["path"] = [float(v) for v in paths["ovr"].mean(axis=0)]
+
+
+def fair_raw(p: dict, scale: float) -> float:
+    """Mean annual value over the contract, on the player's expected ovr path.
+
+    This is what makes the price FAIR: a 20-year-old who will improve is charged for
+    the player he becomes, and a 28-year-old about to decline is charged for the
+    decline. Measured on the 2003-04 pool, that moves Kevin Garnett (73/76, age 28)
+    from $31M to $18M and LeBron (67/81, age 20) from $7M to $35M.
+    """
+    yrs = p["years"]
+    return sum(value_at(p["path"][t], scale) for t in range(1, yrs + 1)) / yrs
+
+
+def price_from_raw(raw: float, years: int) -> int:
+    amount = raw * DURATION_PREMIUM[years]
+    amount = int(round(amount / SALARY_STEP)) * SALARY_STEP
+    return min(max(amount, MIN_CONTRACT), MAX_CONTRACT)
 
 
 def solve_scale(players: list[dict]) -> float:
-    """Solve A so the ROSTER_SIZE * NUM_TEAMS most valuable players total the target payroll.
+    """Solve A so the ROSTER_SIZE * NUM_TEAMS most valuable players total the target.
 
-    Solved by BISECTION rather than algebra. Dividing the target by the raw sum ignores
-    the [MIN_CONTRACT, MAX_CONTRACT] clamps: players whose raw price falls below the
-    minimum get pushed UP to it, so the realised total overshoots. Measured on this pool
-    it landed 0.69% high with 9 players clamped. Bisecting on the clamped price converges
-    on the real total instead.
+    Bisection, not algebra: dividing the target by the raw sum ignores the
+    [MIN_CONTRACT, MAX_CONTRACT] clamps, so players pushed UP to the minimum make the
+    realised total overshoot (measured 0.69% high with 9 clamped). Bisecting on the
+    clamped, rounded price converges on the number actually written to the export.
+
+    "Most valuable" is itself scale-invariant here -- the curve is monotonic in the
+    projected path -- so the top-120 set is stable across the search.
     """
     slots = ROSTER_SIZE * NUM_TEAMS
-    ranked = sorted(players, key=draft_value, reverse=True)[:slots]
-    if not ranked:
+    if not players:
         raise ValueError("degenerate pool: cannot solve scale")
-    # A pool smaller than the league's roster slots can't be worth a full league payroll.
-    # Without this, a 30-player file would try to absorb the whole target and clip players
-    # at the max contract -- wrong, and silently so.
-    target = TARGET_LEAGUE_PAYROLL * len(ranked) / slots
 
-    def total_at(scale: float) -> int:
-        return sum(price(p["ovr"], p["pot"], p["age"], scale) for p in ranked)
+    def priced(scale: float) -> list[int]:
+        vals = sorted((fair_raw(p, scale), p["years"]) for p in players)
+        vals.reverse()
+        return [price_from_raw(r, y) for r, y in vals[:slots]]
+
+    # A pool smaller than the league's roster slots can't be worth a full league
+    # payroll; without this a 30-player file would absorb the whole target.
+    target = TARGET_LEAGUE_PAYROLL * min(len(players), slots) / slots
 
     lo, hi = 1.0, 1_000_000.0
-    if total_at(hi) < target:          # even the ceiling can't reach it
+    if sum(priced(hi)) < target:
         return hi
     for _ in range(200):
         mid = (lo + hi) / 2
-        if total_at(mid) < target:
+        if sum(priced(mid)) < target:
             lo = mid
         else:
             hi = mid
@@ -143,21 +191,8 @@ def solve_scale(players: list[dict]) -> float:
 
 
 def draft_value(p: dict) -> float:
-    """Rough stand-in for BBGM's p.value: current ovr plus youth-weighted upside."""
-    return p["ovr"] + max(0, p["pot"] - p["ovr"]) * max(0, 30 - p["age"]) / 12.0
-
-
-SALARY_STEP = 1_000     # whole $1M increments -- no decimals anywhere on the site
-
-
-def price(ovr: int, pot: int, age: int, scale: float) -> int:
-    yrs = contract_length(ovr, pot, age)
-    amount = scale * _raw(ovr, age) * DURATION_PREMIUM[yrs]
-    # Round to the nearest whole $1M. Done INSIDE the priced value (not as a display
-    # step) so solve_scale bisects on the number actually written to the export and the
-    # league total still lands on target.
-    amount = int(round(amount / SALARY_STEP)) * SALARY_STEP
-    return min(max(amount, MIN_CONTRACT), MAX_CONTRACT)
+    """Ranking key for 'who would be drafted': the fair value of the whole contract."""
+    return p.get("fair", 0.0)
 
 
 # ---- applying it to a league export ----------------------------------------
@@ -172,6 +207,7 @@ def extract(league: dict) -> list[dict]:
                 "ovr": r["ovr"],
                 "pot": r["pot"],
                 "age": season - p["born"]["year"],
+                "ratings": r,
                 "name": f"{p['firstName']} {p['lastName']}".strip(),
             }
         )
@@ -181,13 +217,13 @@ def extract(league: dict) -> list[dict]:
 def reprice(league: dict) -> tuple[float, list[dict]]:
     season = league["gameAttributes"]["season"]
     rows = extract(league)
+    project_paths(rows)                     # attaches ["years"] and ["path"]
     scale = solve_scale(rows)
     for row in rows:
-        yrs = contract_length(row["ovr"], row["pot"], row["age"])
-        amount = price(row["ovr"], row["pot"], row["age"], scale)
-        row["p"]["contract"] = {"amount": amount, "exp": season + yrs}
+        row["fair"] = fair_raw(row, scale)
+        amount = price_from_raw(row["fair"], row["years"])
+        row["p"]["contract"] = {"amount": amount, "exp": season + row["years"]}
         row["amount"] = amount
-        row["years"] = yrs
     return scale, rows
 
 
@@ -207,11 +243,10 @@ def report(league: dict, scale: float, rows: list[dict]) -> None:
         print(f"    {r['name']:<22} age {r['age']:<3} ovr {r['ovr']:<3} pot {r['pot']:<3} "
               f"${r['amount'] / 1000:>5.1f}M  {r['years']}yr")
 
-    print("\n  best surplus (high pot, low price):")
-    surplus = [r for r in ranked if r["pot"] - r["ovr"] >= 10]
-    for r in sorted(surplus, key=lambda r: r["amount"])[:6]:
-        print(f"    {r['name']:<22} age {r['age']:<3} ovr {r['ovr']:<3} pot {r['pot']:<3} "
-              f"${r['amount'] / 1000:>5.1f}M  {r['years']}yr")
+    print("\n  projected paths (price follows the path, not today's ovr):")
+    for r in sorted(ranked, key=lambda r: -r["amount"])[:4] + sorted(ranked, key=lambda r: r["age"])[:3]:
+        path = " -> ".join(f"{v:.0f}" for v in r["path"])
+        print(f"    {r['name']:<22} age {r['age']:<3} ${r['amount'] / 1000:>5.1f}M  {path}")
 
     exp = collections.Counter(r["p"]["contract"]["exp"] for r in ranked)
     print("\n  expiration stagger:",
