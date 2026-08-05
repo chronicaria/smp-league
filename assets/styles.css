@@ -669,6 +669,24 @@ tr.total-row td.cur-season { background: rgba(91,157,255,.12); }
 .rating-row { display: flex; justify-content: space-between; gap: .6rem; padding: .12rem 0; font-size: .8rem; }
 .rating-row span { color: var(--muted); }
 .rating-row strong { text-align: right; font-weight: 600; white-space: nowrap; }
+/* Percentile chip beside a rating. The red-to-green tint is an inline style from
+   heat_style_pct, so nothing here may set a background. */
+.rating-row .rating-pct,
+.big-rating .rating-pct {
+  display: inline-block;
+  min-width: 2.1em;
+  margin-left: .4rem;
+  padding: .05rem .25rem;
+  border-radius: .15rem;
+  color: var(--text);
+  font-size: .62rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+  text-align: center;
+  vertical-align: middle;
+}
 .home-hero { margin-bottom: .75rem; }
 .home-section { margin-bottom: .75rem; }
 .award-name strong { display: block; font-size: .9rem; color: var(--text); }
