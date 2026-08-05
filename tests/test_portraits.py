@@ -28,29 +28,65 @@ FIXTURE_SVG = (
     "</svg>"
 )
 
-TEAM_IDENTITY = {
-    2: {
-        "abbrev": "CAM",
-        "primary": "#2C5545",
-        "secondary": "#EAE4C8",
-        "on_primary": "#F6F3E4",
-        "chart": "#2F8C57",
-    },
+# A face object shaped like the ones facesjs puts in the export. Its contents
+# never matter — only that it is a non-empty dict, which is what render.mjs
+# needed to draw the rendered SVG in the first place.
+FIXTURE_FACE = {"head": {"id": "head1"}, "eyes": [{"id": "eye1"}]}
+
+FALLBACK_IDENTITY = {
+    "abbrev": "SMP",
+    "primary": "#3A4150",
+    "secondary": "#8A93A5",
+    "on_primary": "#FFFFFF",
+    "chart": "#8A93A5",
 }
+
+
+class _FakeRegistry(dict):
+    """Mirrors identity._IdentityRegistry: unknown tids resolve to the fallback."""
+
+    def __missing__(self, key):
+        return dict(FALLBACK_IDENTITY)
+
+    def get(self, key, default=None):
+        if key in self:
+            return dict.__getitem__(self, key)
+        return dict(FALLBACK_IDENTITY) if default is None else default
+
+
+TEAM_IDENTITY = _FakeRegistry(
+    {
+        2: {
+            "abbrev": "CAM",
+            "primary": "#2C5545",
+            "secondary": "#EAE4C8",
+            "on_primary": "#F6F3E4",
+            "chart": "#2F8C57",
+        },
+    }
+)
 
 
 def _fake_identity():
     mod = types.SimpleNamespace()
     mod.TEAM_IDENTITY = TEAM_IDENTITY
-    mod.monogram_svg = lambda initials, tid, jersey_number=None, size=72: (
-        '<svg data-monogram="%s" data-tid="%s" data-jersey="%s" data-size="%s"></svg>'
-        % (initials, tid, jersey_number, size)
+    mod.monogram_svg = lambda initials, tid, jersey_number=None, css_class="monogram": (
+        '<svg data-monogram="%s" data-tid="%s" data-jersey="%s" data-class="%s"></svg>'
+        % (initials, tid, jersey_number, css_class)
     )
     return mod
 
 
-def _player(pid, first="Test", last="Player", tid=2, img=None, jersey=None):
+_UNSET = object()
+
+
+def _player(pid, first="Test", last="Player", tid=2, img=None, jersey=None, face=_UNSET):
+    """A player dict. ``face=None`` omits the key entirely (an export that never
+    carried a face for this pid); pass a dict to control it."""
     p = {"pid": pid, "firstName": first, "lastName": last, "tid": tid}
+    face = FIXTURE_FACE if face is _UNSET else face
+    if face is not None:
+        p["face"] = face
     if img is not None:
         p["imgURL"] = img
     if jersey is not None:
@@ -94,9 +130,19 @@ class TestManifest(PortraitsFixtureCase):
         manifest = portraits.load_face_manifest()
         self.assertEqual(manifest["pids"], frozenset({7, 8}))
         self.assertEqual(manifest["sentinels"], ("#F00BA1", "#F00BA2", "#F00BA3"))
-        self.assertTrue(portraits.has_face(7))
-        self.assertFalse(portraits.has_face(999))
+        self.assertTrue(portraits.has_face(_player(7)))
+        self.assertFalse(portraits.has_face(_player(999)))
         self.assertFalse(portraits.has_face(None))
+        # has_face takes the player, not a bare pid
+        self.assertFalse(portraits.has_face(7))
+
+    def test_has_face_requires_a_face_in_this_export(self):
+        # pids are league-local: a manifest left over from another league would
+        # otherwise paint a stranger's portrait onto whoever holds pid 7 now.
+        self.assertFalse(portraits.has_face(_player(7, face=None)))
+        self.assertFalse(portraits.has_face(_player(7, face={})))
+        self.assertFalse(portraits.has_face(_player(7, face="yes")))
+        self.assertFalse(portraits.has_face({"pid": "7", "face": FIXTURE_FACE}))
 
     def test_manifest_is_cached(self):
         first = portraits.load_face_manifest()
@@ -110,7 +156,7 @@ class TestManifest(PortraitsFixtureCase):
         portraits.load_face_manifest.cache_clear()
         manifest = portraits.load_face_manifest()
         self.assertEqual(manifest["pids"], frozenset())
-        self.assertFalse(portraits.has_face(7))
+        self.assertFalse(portraits.has_face(_player(7)))
 
 
 class TestEmitFaces(PortraitsFixtureCase):
@@ -132,13 +178,27 @@ class TestEmitFaces(PortraitsFixtureCase):
         for gray in portraits.FA_COLORS:
             self.assertIn(gray, svg)
 
-    def test_unknown_player_and_unknown_tid_get_neutral_grays(self):
-        # pid 7 absent from players entirely; pid 8 on a tid identity lacks.
+    def test_unknown_tid_gets_the_neutral_fallback_identity(self):
+        # An expansion tid the identity table has never heard of resolves to the
+        # neutral fallback rather than inheriting another franchise's colors.
         portraits.emit_faces(self.out, {8: _player(8, tid=42)})
-        for pid in (7, 8):
-            svg = (self.out / "assets" / "faces" / ("%d.svg" % pid)).read_text(encoding="utf-8")
-            self.assertNotIn("#F00BA", svg)
-            self.assertIn(portraits.FA_COLORS[0], svg)
+        svg = (self.out / "assets" / "faces" / "8.svg").read_text(encoding="utf-8")
+        self.assertNotIn("#F00BA", svg)
+        self.assertIn(FALLBACK_IDENTITY["primary"], svg)
+        self.assertNotIn(TEAM_IDENTITY[2]["primary"], svg)
+
+    def test_player_missing_from_the_export_is_skipped(self):
+        # pid 7 is in the manifest but not in this export at all.
+        portraits.emit_faces(self.out, {8: _player(8)})
+        self.assertFalse((self.out / "assets" / "faces" / "7.svg").exists())
+        self.assertTrue((self.out / "assets" / "faces" / "8.svg").exists())
+
+    def test_player_without_a_face_in_this_export_is_skipped(self):
+        # Same has_face provenance gate the pages use: emitting a face no page
+        # can reach would just be a stale manifest leaking into the output.
+        portraits.emit_faces(self.out, {7: _player(7, face=None), 8: _player(8)})
+        self.assertFalse((self.out / "assets" / "faces" / "7.svg").exists())
+        self.assertTrue((self.out / "assets" / "faces" / "8.svg").exists())
 
     def test_accepts_player_iterable(self):
         portraits.emit_faces(self.out, [_player(7, tid=2), _player(8, tid=-1)])
@@ -159,8 +219,9 @@ class TestEmitFaces(PortraitsFixtureCase):
         self.assertIn(portraits.FA_COLORS[0], path.read_text(encoding="utf-8"))
 
     def test_missing_source_svg_is_skipped(self):
+        # Both players are present and faced; only the source file has drifted.
         (self.rendered / "8.svg").unlink()
-        portraits.emit_faces(self.out, {7: _player(7, tid=2)})
+        portraits.emit_faces(self.out, {7: _player(7, tid=2), 8: _player(8, tid=2)})
         self.assertTrue((self.out / "assets" / "faces" / "7.svg").exists())
         self.assertFalse((self.out / "assets" / "faces" / "8.svg").exists())
 
@@ -188,6 +249,17 @@ class TestPortraitHtml(PortraitsFixtureCase):
         self.assertIn("this.outerHTML=decodeURIComponent(", html)
         self.assertIn("portrait-monogram", html)  # encoded payload decodes to it
         self.assertNotIn("assets/faces/", html)
+
+    def test_stale_manifest_pid_never_borrows_the_face(self):
+        # pid 7 owns a rendered SVG, but this export's pid 7 carries no face, so
+        # it is a different player: monogram, never assets/faces/7.svg.
+        stale = _player(7, "Cy", "Dunn", face=None)
+        self.assertNotIn("assets/faces/", portraits.portrait_html(stale))
+        self.assertIn(
+            "portrait-monogram",
+            portraits.portrait_html(_player(7, "Cy", "Dunn", face=None,
+                                            img="https://cdn.example/x.png")),
+        )
 
     def test_face_when_no_photo(self):
         html = portraits.portrait_html(_player(8, "Bo", "Cruz"), "portrait", "../../", 48)

@@ -41,6 +41,12 @@ def _stat_row(season=2030, gp=40, pts=800, fga=600, ast=200, tid=0):
             "stl": 30, "blk": 20, "tov": 80, "tid": tid}
 
 
+def _mil(amount):
+    """The page's own short money label for a FIN_* constant ($5M, $2.5M), so the
+    finance assertions track the constants instead of a rebalanced literal."""
+    return team_page._fin_mil(amount)
+
+
 def _playoff_series(season, home_tid, away_tid, home_won, away_won):
     return {
         "season": season,
@@ -156,11 +162,13 @@ class TestDepthChartCards(unittest.TestCase):
         ]
         roster[0]["jerseyNumber"] = 7
         html = team_page.depth_chart_card(roster, 2031, 2026)
-        for label in ("Starters", "2nd String", "3rd String", "4th String"):
+        for label in ("Starters", "2nd String", "Reserves"):
             self.assertIn(label, html)
-        self.assertNotIn("5th String", html)
-        # 4 rows x 5 slots = 20 cards; 15 are vacancies (dashed empty cards)
-        self.assertEqual(html.count("depth-card--vacant"), 15)
+        # a 12-man roster never fills a 5-wide grid three deep: everything at
+        # depth 3+ collapses into Reserves instead of a "3rd String" row
+        self.assertNotIn("3rd String", html)
+        # only the Starters row pads to five slots; SG/SF/PF have nobody at all
+        self.assertEqual(html.count("depth-card--vacant"), 3)
         self.assertIn("#7", html)                      # jersey number shown
         self.assertIn("depth-ovr", html)               # OVR chip
         self.assertIn("<strong>20.0</strong><small>PTS</small>", html)  # 800/40
@@ -168,11 +176,13 @@ class TestDepthChartCards(unittest.TestCase):
         for p in roster:
             self.assertEqual(html.count(lg.player_url(p, "../")), 1)
 
-    def test_minimum_three_rows_even_when_shallow(self):
+    def test_rows_below_the_starters_end_when_the_bucket_runs_out(self):
         roster = [_player(1, "Only", "Guy", pos="PG", ovr=70)]
         html = team_page.depth_chart_card(roster, 2031, 2026)
-        self.assertIn("3rd String", html)
-        self.assertNotIn("4th String", html)
+        self.assertIn("Starters", html)
+        self.assertEqual(html.count("depth-card--vacant"), 4)  # SG/SF/PF/C empty
+        self.assertNotIn("2nd String", html)
+        self.assertNotIn("Reserves", html)
 
 
 class TestScoringShare(unittest.TestCase):
@@ -325,13 +335,17 @@ class TestImmersionAndPolish(unittest.TestCase):
         self.assertNotIn("block-title", html)
         self.assertIn("<h2>Salaries</h2>", html)
 
-    def test_luxury_tax_tiles_have_explainers(self):
-        tfin = {"payroll": 310000.0, "luxtax": 10000.0, "over_cap": True, "under_cap": False,
-                "tax_share": 0.0}
-        html = team_page.luxury_tax_card(tfin, {"soft_cap": 300000, "pool": 10000,
-                                                "share": 1250.0, "n_under": 8})
+    def test_cap_sheet_tiles_have_explainers(self):
+        # what the old Luxury Tax card became: there is no tax to report, so the
+        # card reports payroll against the league-average line instead.
+        tfin = {"payroll": 110000.0, "cap": 100000.0, "cap_room": -10000.0, "over_cap": False}
+        data = {"gameAttributes": {"salaryCap": 100000, "salaryCapType": "none",
+                                   "minContract": 1000, "maxRosterSize": 12}}
+        html = team_page.cap_sheet_card(tfin, data, 2004, 12, {"teams": {}})
+        self.assertIn("Cap Sheet", html)
         self.assertIn("has-tip", html)
         self.assertIn('title="', html)
+        self.assertNotIn("Luxury tax", html)
 
     def test_team_color_ramp_is_deterministic_and_distinct(self):
         ramp1 = team_page.team_color_ramp(2, 8)
@@ -348,64 +362,93 @@ class TestImmersionAndPolish(unittest.TestCase):
 
 
 class TestFinanceDisplay(unittest.TestCase):
-    """New model: net revenue is the whole next-season budget — no carried cash."""
+    """New model: net revenue is the whole next-season budget — no carried cash,
+    and with an uncapped league there is no luxury tax to net out either."""
+
+    def _rules_data(self, season=2031):
+        """A 10-team, 36-game uncapped league, shaped like the real export."""
+        teams = [_team(tid, "T%02d" % tid) for tid in range(10)]
+        return {
+            "gameAttributes": {"season": season, "numGames": 36, "salaryCap": 100000,
+                               "salaryCapType": "none", "minContract": 1000,
+                               "maxRosterSize": 12},
+            "teams": teams,
+        }
 
     def _league(self):
         teams = [
             {"tid": 0, "abbrev": "AAA", "region": "City", "name": "AAA",
-             "seasons": [{"season": 2031, "won": 10, "lost": 2}]},
+             "seasons": [{"season": 2031, "won": 20, "lost": 16}]},
             {"tid": 1, "abbrev": "BBB", "region": "City", "name": "BBB",
-             "seasons": [{"season": 2031, "won": 2, "lost": 10}]},
+             "seasons": [{"season": 2031, "won": 6, "lost": 30}]},
         ]
         players = [
             {"pid": 1, "firstName": "P", "lastName": "0", "tid": 0,
-             "contract": {"amount": 320000, "exp": 2032}, "ratings": [{"season": 2031, "ovr": 60}]},
+             "contract": {"amount": 120000, "exp": 2032}, "ratings": [{"season": 2031, "ovr": 60}]},
             {"pid": 2, "firstName": "P", "lastName": "1", "tid": 1,
              "contract": {"amount": 40000, "exp": 2032}, "ratings": [{"season": 2031, "ovr": 60}]},
         ]
         data = {"teams": teams, "players": players, "playoffSeries": [], "releasedPlayers": []}
         return lg.compute_league_finances(data, teams, players, 2031, odds={})
 
+    def test_money_label_helper_renders_real_figures(self):
+        # The assertions below are formatted by the page's own _fin_mil, so pin it:
+        # a formatter that returned "" would make every one of them vacuous.
+        self.assertEqual(_mil(5000), "$5M")
+        self.assertEqual(_mil(2500), "$2.5M")
+        self.assertEqual(_mil(lg.FIN_PER_WIN), "$%gM" % (lg.FIN_PER_WIN / 1000))
+
     def test_ledger_presents_budget_not_cash(self):
         lf = self._league()
-        html = team_page.finance_ledger_card(lf["teams"][0], 2032)
+        html = team_page.finance_ledger_card(lf["teams"][0], 2032, lf["cap"])
         self.assertNotIn("League share", html)  # P8: no flat share row
         self.assertIn("Win payouts", html)
-        self.assertIn("$12.8M", html)           # per-win rate, exact label
-        self.assertIn("Playoff bonuses", html)
-        self.assertIn("2032 budget", html)
+        self.assertIn(f"({_mil(lg.FIN_PER_WIN)} × W)", html)  # per-win rate, exact label
+        self.assertIn("Postseason", html)
+        self.assertIn("2032 net revenue", html)
         self.assertIn("Season balance", html)
         self.assertIn("Committed 2032 payroll", html)
-        self.assertIn("Budget surplus", html)
+        self.assertIn("Spendable in 2032", html)
         self.assertNotIn("Cash on hand", html)
         self.assertNotIn("Starting balance", html)
+        self.assertNotIn("Luxury tax", html)    # no tax exists in an uncapped league
 
-    def test_hero_chip_shows_budget_and_surplus(self):
+    def test_ledger_money_is_wins_times_the_per_win_rate(self):
         lf = self._league()
-        over, under = lf["teams"][0], lf["teams"][1]
-        html = team_page.hero_finance_chip(over, 2032)
-        self.assertIn("2032 budget", html)
-        self.assertIn("Surplus vs committed", html)
-        self.assertNotIn("Cash on hand", html)
-        # over-cap team: budget = 10 W × 12.8 − 20 tax = 108 < committed 320 -> red surplus
-        self.assertAlmostEqual(over["net_revenue_proj"], 108000)
-        self.assertAlmostEqual(over["surplus_next"], 108000 - 320000)
+        rich, poor = lf["teams"][0], lf["teams"][1]
+        # No appearance money and no tax pool: revenue is wins × the per-win rate.
+        self.assertAlmostEqual(rich["net_revenue_proj"], lg.FIN_PER_WIN * 20)
+        self.assertAlmostEqual(rich["surplus_next"], lg.FIN_PER_WIN * 20 - 120000)
+        self.assertAlmostEqual(poor["net_revenue_proj"], lg.FIN_PER_WIN * 6)
+        self.assertAlmostEqual(poor["surplus_next"], lg.FIN_PER_WIN * 6 - 40000)
+        # a team that outspends what it wins reads red on the spendable tile
+        self.assertIn("delta-down", team_page.finance_ledger_card(rich, 2032, lf["cap"]))
+
+    def test_hero_chip_shows_payroll_against_the_line(self):
+        lf = self._league()
+        rich, poor = lf["teams"][0], lf["teams"][1]
+        html = team_page.hero_cap_chip(rich, lg.FIN_TARGET_PAYROLL, 2031)
+        self.assertIn("2031 payroll", html)
+        self.assertIn("Over the cap by", html)
         self.assertIn("delta-down", html)
-        # under-cap team collects the pool: 2 W × 12.8 + 20 tax share,
-        # against a $40M committed payroll -> positive surplus
-        self.assertAlmostEqual(under["net_revenue_proj"], 25600 + 20000)
-        self.assertAlmostEqual(under["surplus_next"], 45600 - 40000)
-        self.assertIn("delta-up", team_page.hero_finance_chip(under, 2032))
+        self.assertNotIn("Cash on hand", html)
+        under = team_page.hero_cap_chip(poor, lg.FIN_TARGET_PAYROLL, 2031)
+        self.assertIn("Cap space", under)
+        self.assertIn("delta-up", under)
 
     def test_rules_card_states_the_new_numbers(self):
-        html = team_page.finance_rules_card()
+        html = team_page.finance_rules_card(self._rules_data(), 2031)
         self.assertNotIn("League share", html)  # P8: no flat share
-        self.assertIn("+$12.8M", html)  # per win
-        self.assertIn("+$15M", html)    # berth / finals
-        self.assertIn("+$20M", html)    # title
-        self.assertIn("+$50M", html)    # champion's stacked bonus
-        self.assertIn("$300M", html)    # soft cap
-        self.assertIn("$299M", html)    # league-average budget
+        self.assertIn(f"+{_mil(lg.FIN_PER_WIN)}", html)        # per win
+        self.assertIn(f"+{_mil(lg.FIN_PLAYOFF)}", html)        # berth
+        self.assertIn(f"+{_mil(lg.FIN_PLAYOFF_WIN)}", html)    # each playoff win
+        self.assertIn(f"+{_mil(lg.FIN_FINALS)}", html)         # finals
+        self.assertIn(f"+{_mil(lg.FIN_CHAMP)}", html)          # title
+        stacked = lg.FIN_PLAYOFF + 6 * lg.FIN_PLAYOFF_WIN + lg.FIN_FINALS + lg.FIN_CHAMP
+        self.assertIn(f"+{_mil(stacked)}", html)  # champion's stacked bonus
+        # 36 games × 10 teams / 2 = 180 wins shared out, plus the postseason pool
+        self.assertIn(_mil(lg.FIN_TARGET_PAYROLL), html)  # league-average budget
+        self.assertIn("No salary cap and no luxury tax.", html)
         self.assertNotIn("$75", html)   # no starting cash
         self.assertNotIn("carried cash", html.replace("no carried cash", ""))
 

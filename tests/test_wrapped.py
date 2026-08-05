@@ -177,7 +177,10 @@ def _load_real_export():
 
     from smp.core import current_season, normalize_positions, team_sort_key
 
-    path = os.path.join(_REPO, "league-data", "2031_preseason.json")
+    # Wrapped recaps a COMPLETED season. The SMP II export is a pre-draft snapshot
+    # with no season behind it, so the real-data fixture is SMP I's final export,
+    # archived under league-data/smp1/.
+    path = os.path.join(_REPO, "league-data", "smp1", "2031_preseason.json")
     with open(path, "r", encoding="utf-8") as handle:
         data = json.load(handle)
     normalize_positions(data)

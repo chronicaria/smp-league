@@ -25,7 +25,10 @@ from smp.core import (  # noqa: E402
 from smp.derived import drama_index, fantasy_pts, feats_index  # noqa: E402
 from smp.pages import game as game_page  # noqa: E402
 
-_EXPORT = os.path.join(_REPO, "league-data", "2031_preseason.json")
+# The SMP II export is a pre-draft snapshot with zero games played, so the only
+# real box scores in the repo are SMP I's, archived under league-data/smp1/. The
+# renderer is league-agnostic; what it needs is games that were actually played.
+_EXPORT = os.path.join(_REPO, "league-data", "smp1", "2031_preseason.json")
 
 with open(_EXPORT, "r", encoding="utf-8") as fh:
     DATA = json.load(fh)

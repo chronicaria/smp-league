@@ -20,7 +20,14 @@ from smp.core import normalize_positions, current_season, team_sort_key  # noqa:
 
 
 def _load_export(name="2031_preseason.json"):
-    matches = glob.glob(os.path.join(_REPO, "league-data", name))
+    # These pages recap a season that has been PLAYED -- champions, history,
+    # records, draft re-grades, a live schedule. The SMP II export is a pre-draft
+    # snapshot with zero games, so the only export that exercises them is the
+    # archived SMP I league; the renderers are league-agnostic. Look in
+    # league-data/ first so a future played-season export takes over on its own.
+    matches = glob.glob(os.path.join(_REPO, "league-data", name)) or glob.glob(
+        os.path.join(_REPO, "league-data", "smp1", name)
+    )
     if not matches:
         raise unittest.SkipTest("no %s export available" % name)
     with open(matches[0], "r", encoding="utf-8") as fh:

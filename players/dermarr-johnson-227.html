@@ -154,25 +154,14 @@
     
     <section class="card">
       <div class="section-title-row">
-        <h2>Development &amp; Projection</h2>
-        <span class="muted small-copy"><span class="chart-key chart-key-ovr"></span> Overall · <span class="chart-key chart-key-pot"></span> Potential · <span class="chart-key proj-key-band"></span> Projection</span>
+        <h2>Development</h2>
+        <span class="muted small-copy"><span class="chart-key chart-key-ovr"></span> Overall · <span class="chart-key chart-key-pot"></span> Potential</span>
       </div>
-      <div class="chart-wrap proj-wrap" data-proj-chart>
-        <svg viewBox="0 0 660 210" class="proj-chart" role="img" aria-label="Overall rating history and 6-season projection">
-          <line x1="34" y1="166.5" x2="646" y2="166.5" class="chart-grid"/><text x="28" y="170.0" class="chart-tick" text-anchor="end">30</text><line x1="34" y1="115.0" x2="646" y2="115.0" class="chart-grid"/><text x="28" y="118.5" class="chart-tick" text-anchor="end">40</text><line x1="34" y1="63.5" x2="646" y2="63.5" class="chart-grid"/><text x="28" y="67.0" class="chart-tick" text-anchor="end">50</text><line x1="34" y1="12.0" x2="646" y2="12.0" class="chart-grid"/><text x="28" y="15.5" class="chart-tick" text-anchor="end">60</text><text x="34.0" y="202" class="chart-tick" text-anchor="middle">2004</text><text x="136.0" y="202" class="chart-tick" text-anchor="middle">2005</text><text x="238.0" y="202" class="chart-tick" text-anchor="middle">2006</text><text x="340.0" y="202" class="chart-tick" text-anchor="middle">2007</text><text x="442.0" y="202" class="chart-tick" text-anchor="middle">2008</text><text x="544.0" y="202" class="chart-tick" text-anchor="middle">2009</text><text x="646.0" y="202" class="chart-tick" text-anchor="middle">2010</text>
-          <polygon points="34.0,73.8 136.0,32.6 238.0,32.6 340.0,32.6 442.0,32.6 544.0,37.8 646.0,42.9 646.0,161.4 544.0,145.9 442.0,135.6 340.0,120.2 238.0,115.0 136.0,99.6 34.0,73.8" class="proj-band-80"/>
-          <polygon points="34.0,73.8 136.0,42.9 238.0,42.9 340.0,48.1 442.0,58.4 544.0,63.5 646.0,79.0 646.0,145.9 544.0,130.5 442.0,120.2 340.0,99.6 238.0,94.4 136.0,99.6 34.0,73.8" class="proj-band-50"/>
-          <polyline points="34.0,73.8 136.0,73.8 238.0,73.8 340.0,73.8 442.0,89.3 544.0,99.6 646.0,115.0" class="proj-median"/><circle cx="34.0" cy="73.8" r="3" class="proj-median-dot"><title>2004: 48 proj</title></circle><circle cx="136.0" cy="73.8" r="3" class="proj-median-dot"><title>2005: 48 proj</title></circle><circle cx="238.0" cy="73.8" r="3" class="proj-median-dot"><title>2006: 48 proj</title></circle><circle cx="340.0" cy="73.8" r="3" class="proj-median-dot"><title>2007: 48 proj</title></circle><circle cx="442.0" cy="89.3" r="3" class="proj-median-dot"><title>2008: 45 proj</title></circle><circle cx="544.0" cy="99.6" r="3" class="proj-median-dot"><title>2009: 43 proj</title></circle><circle cx="646.0" cy="115.0" r="3" class="proj-median-dot"><title>2010: 40 proj</title></circle>
-          <polyline points="34.0,37.8" class="line-pot"/><circle cx="34.0" cy="37.8" r="3" class="line-pot-dot"><title>2004: 55</title></circle>
-          <polyline points="34.0,73.8" class="line-ovr"/><circle cx="34.0" cy="73.8" r="3" class="line-ovr-dot"><title>2004: 48</title></circle>
-          <line x1="34.0" y1="12" x2="34.0" y2="182" class="proj-divider"/>
-          <line class="proj-hover-line" data-proj-hover-line y1="12" y2="182" style="display:none"/>
-          <circle class="proj-hover-dot" data-proj-hover-dot r="3.5" style="display:none"/>
-        </svg>
-        <div class="chart-tooltip" data-proj-tooltip hidden></div>
-      </div>
-      <p class="muted small-copy" title="Median of 1,000 Monte Carlo simulations of the game's aging model; bands are the 80% (P10–P90) and 50% (P25–P75) ranges">6-season projection · potential ceiling ≈ 56</p>
-      <script type="application/json" id="proj-data-227">{"cur":2004,"potPeak":56,"hist":{"s":[2004],"ovr":[48.0],"pot":[55.0]},"proj":{"s":[2004,2005,2006,2007,2008,2009,2010],"p10":[48.0,43.0,40.0,39.0,36.0,34.0,31.0],"p25":[48.0,43.0,44.0,43.0,39.0,37.0,34.0],"p50":[48.0,48.0,48.0,48.0,45.0,43.0,40.0],"p75":[48.0,54.0,54.0,53.0,51.0,50.0,47.0],"p90":[48.0,56.0,56.0,56.0,56.0,55.0,54.0]},"g":{"ml":34,"mt":12,"pw":612,"ph":170,"lo":27,"hi":60,"smin":2004,"smax":2010,"w":660,"h":210}}</script>
+      <svg viewBox="0 0 640 170" class="dev-chart" role="img" aria-label="Overall and potential by season">
+        <line x1="34" y1="136.9" x2="628" y2="136.9" class="chart-grid"/><text x="28" y="140.4" class="chart-tick" text-anchor="end">45</text><line x1="34" y1="91.6" x2="628" y2="91.6" class="chart-grid"/><text x="28" y="95.1" class="chart-tick" text-anchor="end">50</text><line x1="34" y1="46.3" x2="628" y2="46.3" class="chart-grid"/><text x="28" y="49.8" class="chart-tick" text-anchor="end">55</text><text x="34.0" y="162" class="chart-tick" text-anchor="middle">2004</text>
+        <polyline points="34.0,46.3" class="line-pot"/><circle cx="34.0" cy="46.3" r="3" class="line-pot-dot"><title>2004: 55</title></circle>
+        <polyline points="34.0,109.7" class="line-ovr"/><circle cx="34.0" cy="109.7" r="3" class="line-ovr-dot"><title>2004: 48</title></circle>
+      </svg>
     </section>
     </div><aside class="ov-side">
     <section class="card player-bio">

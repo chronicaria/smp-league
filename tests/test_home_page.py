@@ -412,8 +412,9 @@ class TestPlayoffOddsPrecision(unittest.TestCase):
 
 
 class TestHomeFinancesTable(unittest.TestCase):
-    """The home finance table reads the ledger defensively and shows the
-    budget/committed/surplus columns (new finance semantics)."""
+    """The home finance table reads the ledger defensively and shows payroll
+    against the cap anchor. SMP II has no luxury tax and no carried cash, so the
+    revenue / budget / surplus columns are gone."""
 
     def setUp(self):
         self._real_fin = home.compute_league_finances
@@ -421,10 +422,10 @@ class TestHomeFinancesTable(unittest.TestCase):
         home.league_sim = lambda data, teams, season: {"teams": {}}
         self.ledger = {
             "teams": {
-                0: {"won": 30, "lost": 15, "revenue_proj": 340000, "net_proj": 330000,
-                    "committed_next": 290000, "surplus_next": 40000},
-                1: {"won": 15, "lost": 30, "revenue_proj": 260000, "net_proj": 270000,
-                    "committed_next": 305000, "surplus_next": -35000},
+                0: {"won": 30, "lost": 15, "payroll": 60000, "cap_room": 40000,
+                    "committed_next": 90000},
+                1: {"won": 15, "lost": 30, "payroll": 95000, "cap_room": 5000,
+                    "committed_next": 105000},
             }
         }
         home.compute_league_finances = lambda *args: self.ledger
@@ -433,37 +434,48 @@ class TestHomeFinancesTable(unittest.TestCase):
         home.compute_league_finances = self._real_fin
         home.league_sim = self._real_sim
 
+    def _data(self):
+        # The cap anchor is read from the export, never a literal.
+        return {"gameAttributes": {"salaryCap": 100000, "salaryCapType": "none"}}
+
     def _teams(self):
         return [_team(0, "AAA"), _team(1, "BBB")]
 
-    def test_new_columns_and_color_coded_surplus(self):
-        html = home.home_finances_table({}, self._teams(), [], 2031)
+    def test_columns_and_color_coded_cap_room(self):
+        html = home.home_finances_table(self._data(), self._teams(), [], 2031)
         self.assertIn('id="home-finances"', html)
-        for header in ("Proj revenue", "2032 budget", "2032 committed payroll", "Surplus"):
+        for header in ("Payroll", "Cap room", "2032 committed", "2032 cap room"):
             self.assertIn(header, html)
-        # No cash-on-hand language in the new model.
-        self.assertNotIn("Cash on Hand", html)
-        self.assertNotIn("bankroll", html)
-        # Signed, color-coded surplus.
+        # The cash/tax economy is gone: no revenue, budget or surplus columns.
+        for gone in ("Proj revenue", "2032 budget", "Surplus", "Cash on Hand",
+                     "bankroll", "Luxury tax"):
+            self.assertNotIn(gone, html)
+        # Signed, color-coded cap room; team 1 is committed past the anchor next season.
         self.assertIn('<span class="delta-up">+$40M</span>', html)
-        self.assertIn('<span class="delta-down">-$35M</span>', html)
-        # Sorted by budget, biggest first.
+        self.assertIn('<span class="delta-down">-$5M</span>', html)
+        # Sorted by cap room, most room first.
         self.assertLess(html.find("Region0"), html.find("Region1"))
 
+    def test_no_cap_in_export_blanks_the_room_columns(self):
+        # An export with no salaryCap has nothing to compare payroll against.
+        html = home.home_finances_table({}, self._teams(), [], 2031)
+        self.assertIn("$60M", html)
+        self.assertIn(">—<", html)
+        self.assertNotIn("delta-up", html)
+
     def test_falls_back_to_legacy_ledger_keys(self):
-        # Old finance.py shape (rev_proj / luxtax / tax_share / payroll_next): the
-        # table must still compose sane budget and surplus figures.
+        # Older ledger shape (payroll_next, no cap_room): the table must still
+        # compose the committed column and derive cap room from the cap itself.
         self.ledger = {
             "teams": {
-                0: {"won": 20, "lost": 25, "rev_proj": 320000, "luxtax": 10000,
-                    "tax_share": 0.0, "adj": 0.0, "payroll_next": 280000},
+                0: {"won": 20, "lost": 25, "payroll": 88000, "payroll_next": 70000},
             }
         }
-        html = home.home_finances_table({}, [_team(0, "AAA")], [], 2031)
-        self.assertIn("$320M", html)                                # projected revenue
-        self.assertIn("$310M", html)                                # budget = 320 − 10 tax
-        self.assertIn("$280M", html)                                # committed payroll
-        self.assertIn('<span class="delta-up">+$30M</span>', html)  # surplus = 310 − 280
+        html = home.home_finances_table(self._data(), [_team(0, "AAA")], [], 2031)
+        self.assertIn("$88M", html)                                 # payroll
+        self.assertIn('<span class="delta-up">+$12M</span>', html)  # room = 100 − 88
+        self.assertIn("$70M", html)                                 # 2032 committed
+        self.assertIn('<span class="delta-up">+$30M</span>', html)  # 2032 room = 100 − 70
 
 
 class TestHomeColumns(unittest.TestCase):

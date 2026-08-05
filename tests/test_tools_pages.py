@@ -25,6 +25,7 @@ if _SCRIPTS not in sys.path:
 
 import projections  # noqa: E402
 from smp.core import heat_style, normalize_positions, team_sort_key, active_players, current_season  # noqa: E402
+from smp.finance import FIN_SOFT_CAP  # noqa: E402
 from smp.simmodel import REPLACEMENT_OVR  # noqa: E402
 from smp.pages.lineup import render_lineup_pages  # noqa: E402
 from smp.pages.simulator import render_simulator_pages  # noqa: E402
@@ -36,6 +37,9 @@ with open(os.path.join(_JS_DIR, "trade-extras.js"), encoding="utf-8") as fh:
     TRADE_JS = fh.read()
 with open(os.path.join(_JS_DIR, "simulator.js"), encoding="utf-8") as fh:
     SIMULATOR_JS = fh.read()
+
+
+_SEASON = 2004
 
 
 def _synthetic_league():
@@ -50,15 +54,15 @@ def _synthetic_league():
             "lastName": f"Player{pid}",
             "tid": pid % 4,
             "retiredYear": None,
-            "born": {"year": 2005},
-            "contract": {"amount": 10000, "exp": 2033},
-            "ratings": [{"season": 2031, "pos": "G", "ovr": 60, "pot": 65}],
+            "born": {"year": 1980},
+            "contract": {"amount": 10000, "exp": _SEASON + 2},
+            "ratings": [{"season": _SEASON, "pos": "G", "ovr": 60, "pot": 65}],
             "stats": [],
         }
         for pid in range(8)
     ]
     data = {
-        "gameAttributes": [{"key": "season", "value": 2031}],
+        "gameAttributes": [{"key": "season", "value": _SEASON}],
         "teams": teams,
         "players": players,
         "games": [],
@@ -70,7 +74,7 @@ def _synthetic_league():
 class TestLineupShell(unittest.TestCase):
     def test_shell_structure(self):
         data, teams, players = _synthetic_league()
-        pages = render_lineup_pages(data, teams, players, 2031)
+        pages = render_lineup_pages(data, teams, players, _SEASON)
         self.assertEqual(set(pages), {"lineup.html"})
         html = pages["lineup.html"]
         self.assertIn("data-lineup-app", html)
@@ -85,14 +89,19 @@ class TestLineupShell(unittest.TestCase):
         self.assertIn('role="radiogroup"', html)
         self.assertIn("data-ll-bench hidden", html)
         self.assertIn("Bench 10", html)
-        # tax line comes from finance.FIN_SOFT_CAP, not a hand-keyed figure
-        self.assertIn("$300M tax line", html)
+        # The league is uncapped and untaxed: the salary anchor is the league-average
+        # payroll (finance.FIN_SOFT_CAP), not a tax line, and the figure is derived
+        # from the constant rather than hand-keyed.
+        self.assertIn(f"salary vs the ${FIN_SOFT_CAP / 1000:.0f}M league average", html)
+        self.assertNotIn("tax line", html)
+        # the hero blurb ships once — guards the duplicated-copy bug fixed in lineup.py
+        self.assertEqual(html.count("salary vs the"), 1)
 
 
 class TestSimulatorShell(unittest.TestCase):
     def test_shell_structure_fresh_season(self):
         data, teams, players = _synthetic_league()
-        pages = render_simulator_pages(data, teams, players, 2031)
+        pages = render_simulator_pages(data, teams, players, _SEASON)
         self.assertEqual(set(pages), {"simulator.html"})
         html = pages["simulator.html"]
         self.assertIn("data-wo-app", html)
@@ -108,10 +117,10 @@ class TestSimulatorShell(unittest.TestCase):
     def test_played_season_wording(self):
         data, teams, players = _synthetic_league()
         data["games"] = [{
-            "gid": 1, "season": 2031, "day": 1, "playoffs": False,
+            "gid": 1, "season": _SEASON, "day": 1, "playoffs": False,
             "teams": [{"tid": 0, "pts": 100, "players": []}, {"tid": 1, "pts": 90, "players": []}],
         }]
-        html = render_simulator_pages(data, teams, players, 2031)["simulator.html"]
+        html = render_simulator_pages(data, teams, players, _SEASON)["simulator.html"]
         self.assertIn("every remaining regular-season game", html)
         self.assertNotIn("hasn't tipped off", html)
 
@@ -244,9 +253,9 @@ class TestSimulatorJsModel(unittest.TestCase):
 
 class TestRealExport(unittest.TestCase):
     def test_shells_render_on_real_export(self):
-        matches = glob.glob(os.path.join(_REPO, "league-data", "2031_preseason.json"))
+        matches = glob.glob(os.path.join(_REPO, "league-data", "2004_predraft.json"))
         if not matches:
-            self.skipTest("2031 preseason export not present")
+            self.skipTest("2004 predraft export not present")
         with open(matches[0]) as fh:
             data = json.load(fh)
         normalize_positions(data)

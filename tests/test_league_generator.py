@@ -33,14 +33,22 @@ def _player(pid, first, last, tid=0, exp=2030, amount=10000, ovr=60):
 
 class TestFreeAgentSalary(unittest.TestCase):
     def test_worked_examples_from_formula(self):
-        # 1-year asking salary ($M) must match the formula's worked examples.
-        self.assertEqual(lg.fa_salary_millions(67, 73, 24), 31)  # Cody Williams -> $31M
-        self.assertEqual(lg.fa_salary_millions(72, 72, 28), 37)  # Tyrese Maxey -> $37M
-        self.assertEqual(lg.fa_salary_millions(79, 87, 22), 50)  # AJ Dybantsa (80+ capped) -> $50M
+        # 1-year asking salary ($M). The curve passes through FA_PRICE_AT_PIVOT at
+        # FA_PRICE_PIVOT overall for a peak-age player and doubles every
+        # FA_PRICE_WIDTH points; a one-year deal then pays the 1-year premium.
+        one_yr = lg.FA_DURATION_PREMIUM[1]
+        pivot = lg.FA_PRICE_AT_PIVOT
+        self.assertEqual(lg.fa_salary_millions(60, 60, 28), round(pivot * one_yr, 2))
+        self.assertEqual(lg.fa_salary_millions(65, 70, 28), round(pivot * 2 * one_yr, 2))
+        self.assertEqual(lg.fa_salary_millions(70, 70, 28), 21.33)  # 4.266 x 4 x 1.25
+        # Age is a straight multiplier on the same curve; potential never moves the ask.
+        self.assertEqual(lg.fa_salary_millions(60, 60, 22),
+                         round(pivot * lg.fa_age_factor(22) * one_yr, 2))
+        self.assertEqual(lg.fa_salary_millions(60, 99, 28), lg.fa_salary_millions(60, 60, 28))
 
     def test_bounds_and_curve_ends(self):
-        self.assertEqual(lg.fa_salary_millions(40, 40, 30), 1)   # score <= 52 -> $1M floor
-        self.assertEqual(lg.fa_salary_millions(90, 90, 27), 50)  # score >= 80 -> $50M cap
+        self.assertEqual(lg.fa_salary_millions(40, 40, 30), lg.FA_MIN_CONTRACT)  # $1M floor
+        self.assertEqual(lg.fa_salary_millions(90, 90, 27), lg.FA_MAX_CONTRACT)  # $50M cap
 
     def test_by_length_first_year_matches_single(self):
         vals = lg.fa_salary_by_length(67, 73, 24)
@@ -70,22 +78,23 @@ class TestTeamGameViews(unittest.TestCase):
 
         html = lg.team_finances_table([short, long], 2029)
 
-        self.assertIn("2033", html)
-        self.assertIn("2034", html)  # salary charts now extend through 2034
-        self.assertNotIn("2035", html)
+        self.assertIn("2033", html)      # salary charts run five seasons wide
+        self.assertNotIn("2034", html)
         self.assertNotIn("2029 expiring", html)
         self.assertNotIn(">exp</span>", html)
         self.assertNotIn("expiring-cell", html)
 
-    def test_team_finances_shows_next_five_seasons(self):
+    def test_team_finances_window_starts_at_the_current_season(self):
+        # The window is season .. season+4. It used to start at season+1, which
+        # blanked out every expiring deal on an export of an unplayed season.
         player = _player(23, "Future", "Season", tid=0, exp=2035, amount=5000)
 
         html = lg.team_finances_table([player], 2034)
 
-        self.assertNotIn("2034", html)  # the finished season column is dropped
-        self.assertIn("2035", html)     # window is season+1 .. season+5
-        self.assertIn("2039", html)
-        self.assertNotIn("2040", html)
+        self.assertIn("2034", html)     # the current season is column one
+        self.assertIn("2035", html)
+        self.assertIn("2038", html)
+        self.assertNotIn("2039", html)
 
     def test_depth_chart_assigns_each_player_once(self):
         players = [
@@ -214,76 +223,85 @@ class TestTeamGameViews(unittest.TestCase):
 
 
 class TestTeamFinances(unittest.TestCase):
-    def _team_s(self, tid, abbrev, won, lost):
+    SEASON = 2004   # SMP II is the 2003-04 NBA
+    GAMES = 36      # 36-game regular season -> 180 league wins
+
+    def _ga(self):
+        # SMP II rules as the export states them: no cap, best-of-5 every round.
+        return {"season": self.SEASON, "salaryCap": 0, "salaryCapType": "none",
+                "numGamesPlayoffSeries": [5, 5]}
+
+    def _team_s(self, tid, abbrev, won, lost=None):
         return {"tid": tid, "abbrev": abbrev, "region": "City", "name": abbrev,
-                "seasons": [{"season": 2030, "won": won, "lost": lost}]}
+                "seasons": [{"season": self.SEASON, "won": won,
+                             "lost": self.GAMES - won if lost is None else lost}]}
 
     def _pl(self, tid, amount):
         return {"pid": tid * 100, "firstName": "P", "lastName": str(tid), "tid": tid,
-                "contract": {"amount": amount, "exp": 2031},
-                "ratings": [{"season": 2030, "ovr": 60}]}
+                "contract": {"amount": amount, "exp": self.SEASON + 1},
+                "ratings": [{"season": self.SEASON, "ovr": 60}]}
 
-    def test_regular_season_ledger_and_luxury_tax_redistribution(self):
-        teams = [self._team_s(0, "AAA", 10, 0), self._team_s(1, "BBB", 5, 5)]
-        players = [self._pl(0, 320000), self._pl(1, 200000)]  # A over the $300M cap, B under
-        data = {"teams": teams, "players": players, "playoffSeries": [], "releasedPlayers": []}
-        lf = lg.compute_league_finances(data, teams, players, 2030, odds={})
+    def _data(self, teams, players, series=None):
+        return {"gameAttributes": self._ga(), "teams": teams, "players": players,
+                "playoffSeries": list(series or []), "releasedPlayers": []}
+
+    def test_regular_season_ledger_is_uncapped_and_untaxed(self):
+        teams = [self._team_s(0, "AAA", 20), self._team_s(1, "BBB", 5)]
+        players = [self._pl(0, 320000), self._pl(1, 200000)]  # no cap: any payroll is legal
+        data = self._data(teams, players)
+        lf = lg.compute_league_finances(data, teams, players, self.SEASON, odds={})
         a, b = lf["teams"][0], lf["teams"][1]
-        # A over cap: pays luxury tax, no playoff bonus during the regular season
-        self.assertEqual(a["luxtax"], 20000)
+        # no playoff bonus during the regular season
         self.assertEqual(a["earned_playoff"], 0)
-        # revenue = $12.8M per win (+ bonuses/adjustments) — no league share
-        self.assertEqual(a["revenue_now"], lg.FIN_PER_WIN * 10)
-        self.assertEqual(a["revenue_now"], 128000)
-        self.assertEqual(a["tax_share_in"], 0)
-        # net revenue = the whole next-season budget: revenue − tax + tax share
-        self.assertAlmostEqual(a["net_revenue_now"], 128000 - 20000)
+        # revenue = a flat $5M per win, every win worth the same — no base, no league share
+        self.assertEqual(a["revenue_now"], lg.FIN_PER_WIN * 20)
+        self.assertEqual(a["win_rev_now"], lg.win_revenue(20))
+        self.assertEqual(a["base_rev"], lg.FIN_BASE)
+        # net revenue = the whole next-season budget; nothing is netted out of it
+        self.assertAlmostEqual(a["net_revenue_now"], a["revenue_now"])
         self.assertAlmostEqual(a["season_balance_now"], a["net_revenue_now"] - 320000)
-        # B under cap: collects the whole pool (only under-cap team)
-        self.assertEqual(b["luxtax"], 0)
-        self.assertEqual(b["tax_share_in"], 20000)
-        self.assertAlmostEqual(b["net_revenue_now"],
-                               lg.FIN_PER_WIN * 5 + 20000)
-        # surplus vs committed 2031 payroll (contracts run through exp 2031)
+        self.assertAlmostEqual(b["net_revenue_now"], lg.FIN_PER_WIN * 5)
+        # surplus vs the committed next-season payroll (contracts run through exp)
         self.assertAlmostEqual(b["committed_next"], 200000)
         self.assertAlmostEqual(b["surplus_next"], b["net_revenue_proj"] - 200000)
-        # luxury-tax pool is conserved: collected == redistributed
-        self.assertEqual(lf["pool"], 20000)
-        self.assertAlmostEqual(sum(t["tax_share_in"] for t in lf["teams"].values()), lf["pool"])
+        # SMP II has no cap and no luxury tax: no tax pool, no tax keys, nobody over the line
+        self.assertEqual(lf["cap"], lg.FIN_CAP)
+        self.assertEqual(lf["cap_type"], "none")
+        self.assertNotIn("pool", lf)
+        self.assertFalse(a["over_cap"])
+        for key in ("luxtax", "tax_share_in", "cash_now", "cash_proj", "payroll_next", "avail"):
+            self.assertNotIn(key, a)
 
     def test_manual_adjustment_moves_cash_and_nets_to_zero(self):
-        # 2030: Cambridge (tid 2) sends $1M to Waltham (tid 6) via FIN_ADJUSTMENTS.
-        teams = [self._team_s(2, "CAM", 5, 5), self._team_s(6, "WAL", 5, 5)]
+        # Mechanism test: FIN_ADJUSTMENTS is injected here so it doesn't depend on live
+        # trade data. SMP II ships with no rows — the SMP I ones referenced a league
+        # that no longer exists — but the ledger still has to fold cash trades in.
+        teams = [self._team_s(2, "CAM", 18), self._team_s(6, "WAL", 18)]
         players = [self._pl(2, 100000), self._pl(6, 100000)]
-        data = {"teams": teams, "players": players, "playoffSeries": [], "releasedPlayers": []}
-        lf = lg.compute_league_finances(data, teams, players, 2030, odds={})
+        data = self._data(teams, players)
+        saved_adj = {s: dict(e) for s, e in lg.FIN_ADJUSTMENTS.items()}
+        lg.FIN_ADJUSTMENTS.clear()
+        lg.FIN_ADJUSTMENTS.update({self.SEASON: {
+            2: {"amount": -1000, "note": "cash to Waltham"},
+            6: {"amount": 1000, "note": "cash from Cambridge"},
+        }})
+        try:
+            lf = lg.compute_league_finances(data, teams, players, self.SEASON, odds={})
+            # an adjustment must not leak into another season's ledger
+            lf_next = lg.compute_league_finances(data, teams, players, self.SEASON + 1, odds={})
+        finally:
+            lg.FIN_ADJUSTMENTS.clear()
+            lg.FIN_ADJUSTMENTS.update(saved_adj)
         cam, wal = lf["teams"][2], lf["teams"][6]
         self.assertEqual(cam["adj"], -1000)
         self.assertEqual(wal["adj"], 1000)
+        self.assertIn("Waltham", cam["adj_note"])
         # adjustment is baked into revenue/net revenue and conserved across the two teams
-        self.assertAlmostEqual(cam["revenue_now"],
-                               lg.FIN_PER_WIN * 5 - 1000)
+        self.assertAlmostEqual(cam["revenue_now"], lg.FIN_PER_WIN * 18 - 1000)
         self.assertAlmostEqual(cam["net_revenue_now"] + wal["net_revenue_now"],
-                               2 * (lg.FIN_PER_WIN * 5))
+                               2 * (lg.FIN_PER_WIN * 18))
         self.assertAlmostEqual(cam["adj"] + wal["adj"], 0)
-
-    def test_2031_peterson_trade_cash(self):
-        # 2031: Gooners (tid 5) send $30M to Waltham (tid 6) in the Darryn Peterson trade,
-        # and receive $25M from Queens (tid 3) in the Trae Young trade -> net -$5M.
-        teams = [self._team_s(3, "QUE", 5, 5), self._team_s(5, "GOO", 5, 5), self._team_s(6, "WAL", 5, 5)]
-        players = [self._pl(3, 100000), self._pl(5, 100000), self._pl(6, 100000)]
-        data = {"teams": teams, "players": players, "playoffSeries": [], "releasedPlayers": []}
-        lf = lg.compute_league_finances(data, teams, players, 2031, odds={})
-        que, goo, wal = lf["teams"][3], lf["teams"][5], lf["teams"][6]
-        self.assertEqual(que["adj"], -25000)
-        self.assertEqual(goo["adj"], -5000)
-        self.assertEqual(wal["adj"], 30000)
-        self.assertIn("Trae Young", que["adj_note"])
-        self.assertIn("Darryn Peterson", goo["adj_note"])
-        self.assertIn("Darryn Peterson", wal["adj_note"])
-        # a 2031 adjustment must not leak into another season's ledger
-        lf30 = lg.compute_league_finances(data, teams, players, 2030, odds={})
-        self.assertEqual(lf30["teams"][5]["adj"], 0)
+        self.assertEqual(lf_next["teams"][2]["adj"], 0)
 
     def test_adjustments_net_to_zero_every_season(self):
         for season, entries in lg.FIN_ADJUSTMENTS.items():
@@ -294,10 +312,11 @@ class TestTeamFinances(unittest.TestCase):
         # Mechanism test: a player (pid 1789) sits on tid 5 at $42M; tid 6 retains $17M.
         # FIN_RETENTION is injected here so the test doesn't depend on live trade data.
         cody = {"pid": 1789, "firstName": "Cody", "lastName": "Williams", "tid": 5,
-                "contract": {"amount": 42000, "exp": 2034}, "ratings": [{"season": 2030, "ovr": 65}]}
-        teams = [self._team_s(5, "GOO", 5, 5), self._team_s(6, "WAL", 5, 5)]
+                "contract": {"amount": 42000, "exp": self.SEASON + 4},
+                "ratings": [{"season": self.SEASON, "ovr": 65}]}
+        teams = [self._team_s(5, "GOO", 18), self._team_s(6, "WAL", 18)]
         players = [cody, self._pl(6, 50000)]
-        data = {"teams": teams, "players": players, "playoffSeries": [], "releasedPlayers": []}
+        data = self._data(teams, players)
         saved = dict(lg.ALL_PLAYERS_BY_PID)
         saved_ret = dict(lg.FIN_RETENTION)
         lg.ALL_PLAYERS_BY_PID.clear()
@@ -305,7 +324,7 @@ class TestTeamFinances(unittest.TestCase):
         lg.FIN_RETENTION.clear()
         lg.FIN_RETENTION.update({1789: {"held_by": 6, "amount": 17000, "note": "Waltham (trade)"}})
         try:
-            lf = lg.compute_league_finances(data, teams, players, 2030, odds={})
+            lf = lg.compute_league_finances(data, teams, players, self.SEASON, odds={})
         finally:
             lg.ALL_PLAYERS_BY_PID.clear()
             lg.ALL_PLAYERS_BY_PID.update(saved)
@@ -321,64 +340,86 @@ class TestTeamFinances(unittest.TestCase):
         # retention nets to zero across the league
         self.assertAlmostEqual(sum(t["retained"] for t in lf["teams"].values()), 0)
 
-    def test_playoff_bonuses_stack_only_when_earned(self):
-        complete = {"season": 2030, "series": [
-            [{"home": {"tid": 0, "won": 4}, "away": {"tid": 3, "won": 1}},
-             {"home": {"tid": 1, "won": 4}, "away": {"tid": 2, "won": 2}}],
-            [{"home": {"tid": 0, "won": 4}, "away": {"tid": 1, "won": 2}}],
+    def test_finals_length_and_playoff_win_money_read_the_export(self):
+        # SMP II plays [5, 5], so three wins take the title where SMP I's [7, 7] needed four.
+        self.assertEqual(lg.finals_games_to_win(self._data([], []), self.SEASON), 3)
+        self.assertEqual(
+            lg.finals_games_to_win({"gameAttributes": {"numGamesPlayoffSeries": [7, 7]}}, self.SEASON), 4)
+        # per-playoff-win money counts games won in every round, by winners and losers alike
+        series = {"season": self.SEASON, "series": [
+            [{"home": {"tid": 0, "won": 3}, "away": {"tid": 3, "won": 2}}],
+            [{"home": {"tid": 0, "won": 1}, "away": {"tid": 1, "won": 0}}],
         ]}
-        data = {"playoffSeries": [complete]}
-        self.assertEqual(lg.playoff_status(data, 0, 2030), (True, True, True))    # champion -> 15+15+20
-        self.assertEqual(lg.playoff_status(data, 1, 2030), (True, True, False))   # finalist -> 15+15
-        self.assertEqual(lg.playoff_status(data, 2, 2030), (True, False, False))  # 1st-round out -> 15
+        data = {"gameAttributes": self._ga(), "playoffSeries": [series]}
+        self.assertEqual(lg.playoff_wins(data, 0, self.SEASON), 4)
+        self.assertEqual(lg.playoff_wins(data, 3, self.SEASON), 2)
+        self.assertEqual(lg.playoff_wins(data, 0, self.SEASON + 1), 0)
+
+    def test_playoff_bonuses_stack_only_when_earned(self):
+        complete = {"season": self.SEASON, "series": [
+            [{"home": {"tid": 0, "won": 3}, "away": {"tid": 3, "won": 1}},
+             {"home": {"tid": 1, "won": 3}, "away": {"tid": 2, "won": 2}}],
+            [{"home": {"tid": 0, "won": 3}, "away": {"tid": 1, "won": 2}}],
+        ]}
+        data = {"gameAttributes": self._ga(), "playoffSeries": [complete]}
+        s = self.SEASON
+        self.assertEqual(lg.playoff_status(data, 0, s), (True, True, True))    # champion -> 10+7.5+15
+        self.assertEqual(lg.playoff_status(data, 1, s), (True, True, False))   # finalist -> 10+7.5
+        self.assertEqual(lg.playoff_status(data, 2, s), (True, False, False))  # 1st-round out -> 10
 
     def test_no_false_finalists_mid_round_one(self):
-        # Only round 1 exists; tid0 has already clinched its series 4-1. The Finals
+        # Only round 1 exists; tid0 has already clinched its series 3-1. The Finals
         # round does not exist yet, so nobody may be crowned finalist/champion.
-        midway = {"season": 2030, "series": [
-            [{"home": {"tid": 0, "won": 4}, "away": {"tid": 3, "won": 1}},
+        midway = {"season": self.SEASON, "series": [
+            [{"home": {"tid": 0, "won": 3}, "away": {"tid": 3, "won": 1}},
              {"home": {"tid": 1, "won": 2}, "away": {"tid": 2, "won": 1}}],
         ]}
-        data = {"playoffSeries": [midway]}
-        self.assertEqual(lg.playoff_status(data, 0, 2030), (True, False, False))
-        self.assertEqual(lg.playoff_status(data, 1, 2030), (True, False, False))
+        data = {"gameAttributes": self._ga(), "playoffSeries": [midway]}
+        self.assertEqual(lg.playoff_status(data, 0, self.SEASON), (True, False, False))
+        self.assertEqual(lg.playoff_status(data, 1, self.SEASON), (True, False, False))
 
     def test_finals_in_progress_is_not_yet_a_championship(self):
-        inprog = {"season": 2030, "series": [
-            [{"home": {"tid": 0, "won": 4}, "away": {"tid": 3, "won": 0}},
-             {"home": {"tid": 1, "won": 4}, "away": {"tid": 2, "won": 1}}],
-            [{"home": {"tid": 0, "won": 3}, "away": {"tid": 1, "won": 2}}],  # 3-2, unclinched
+        inprog = {"season": self.SEASON, "series": [
+            [{"home": {"tid": 0, "won": 3}, "away": {"tid": 3, "won": 0}},
+             {"home": {"tid": 1, "won": 3}, "away": {"tid": 2, "won": 1}}],
+            [{"home": {"tid": 0, "won": 2}, "away": {"tid": 1, "won": 2}}],  # 2-2, unclinched
         ]}
-        data = {"playoffSeries": [inprog]}
-        self.assertEqual(lg.playoff_status(data, 0, 2030), (True, True, False))
-        self.assertEqual(lg.playoff_status(data, 1, 2030), (True, True, False))
+        data = {"gameAttributes": self._ga(), "playoffSeries": [inprog]}
+        self.assertEqual(lg.playoff_status(data, 0, self.SEASON), (True, True, False))
+        self.assertEqual(lg.playoff_status(data, 1, self.SEASON), (True, True, False))
 
-    def test_average_net_revenue_identity_is_299m(self):
-        # Synthetic full league: 225 total wins, 4 playoff teams, 2 finalists,
-        # 1 champion. Average net revenue (= next-season budget) must be exactly
-        # $299.0M: (225*12.8 + 4*15 + 2*15 + 20)/10 = 299.0 (luxury tax and
-        # manual adjustments net to zero league-wide; no league share).
-        wins = [30, 28, 26, 25, 24, 22, 20, 18, 17, 15]  # sums to 225
-        self.assertEqual(sum(wins), 225)
-        teams = [self._team_s(tid, f"T{tid}", w, 45 - w) for tid, w in enumerate(wins)]
-        players = [self._pl(tid, 282900) for tid in range(10)]  # avg payroll 282.9M
-        finished = {"season": 2030, "series": [
-            [{"home": {"tid": 0, "won": 4}, "away": {"tid": 3, "won": 1}},
-             {"home": {"tid": 1, "won": 4}, "away": {"tid": 2, "won": 2}}],
-            [{"home": {"tid": 0, "won": 4}, "away": {"tid": 1, "won": 2}}],
+    def test_average_net_revenue_identity_is_100m(self):
+        # Synthetic full league: 180 total wins (10 teams x 36 games), 4 playoff teams,
+        # 12 playoff game wins, 2 finalists, 1 champion. Average net revenue (= the
+        # next-season budget) must land exactly on the target payroll:
+        #   180*$5M + (4*$10M + 12*$2.5M + 2*$7.5M + $15M) = $900M + $100M = $1,000M
+        #   -> $100.0M each. Manual adjustments net to zero league-wide; there is no
+        #   league share, no base, and no tax to net out.
+        wins = [28, 26, 24, 22, 20, 16, 14, 12, 10, 8]
+        self.assertEqual(sum(wins), self.GAMES * 10 // 2)
+        teams = [self._team_s(tid, f"T{tid}", w) for tid, w in enumerate(wins)]
+        # every team at the target payroll, so the league-average team breaks even
+        players = [self._pl(tid, lg.FIN_TARGET_PAYROLL) for tid in range(10)]
+        finished = {"season": self.SEASON, "series": [
+            [{"home": {"tid": 0, "won": 3}, "away": {"tid": 3, "won": 1}},
+             {"home": {"tid": 1, "won": 3}, "away": {"tid": 2, "won": 1}}],
+            [{"home": {"tid": 0, "won": 3}, "away": {"tid": 1, "won": 1}}],
         ]}
-        data = {"teams": teams, "players": players, "playoffSeries": [finished], "releasedPlayers": []}
-        lf = lg.compute_league_finances(data, teams, players, 2030, odds={})
+        data = self._data(teams, players, [finished])
+        lf = lg.compute_league_finances(data, teams, players, self.SEASON, odds={})
         self.assertEqual(len(lf["teams"]), 10)
-        # champion stacks berth + finals + title = $50M
+        # 12 playoff game wins across the bracket -> $30M of per-win money
+        self.assertEqual(sum(lg.playoff_wins(data, tid, self.SEASON) for tid in range(10)), 12)
+        # champion stacks berth + 6 playoff wins + finals + title = $47.5M
         self.assertEqual(lf["teams"][0]["earned_playoff"],
-                         lg.FIN_PLAYOFF + lg.FIN_FINALS + lg.FIN_CHAMP)
-        self.assertEqual(lf["teams"][0]["earned_playoff"], 50000)
+                         lg.FIN_PLAYOFF + 6 * lg.FIN_PLAYOFF_WIN + lg.FIN_FINALS + lg.FIN_CHAMP)
+        self.assertEqual(lf["teams"][0]["earned_playoff"], 47500)
         avg_net = sum(f["net_revenue_now"] for f in lf["teams"].values()) / 10
-        self.assertAlmostEqual(avg_net, 299000.0)
-        # season balance = net revenue − payroll; league-average ≈ +$16.1M here
+        self.assertAlmostEqual(avg_net, float(lg.FIN_TARGET_PAYROLL))
+        self.assertAlmostEqual(avg_net, 100000.0)
+        # season balance = net revenue − payroll: at the target payroll the league breaks even
         avg_balance = sum(f["season_balance_now"] for f in lf["teams"].values()) / 10
-        self.assertAlmostEqual(avg_balance, 299000.0 - 282900.0)
+        self.assertAlmostEqual(avg_balance, 0.0)
 
 
 class TestCanonicalPositions(unittest.TestCase):
@@ -417,10 +458,11 @@ class TestCanonicalPositions(unittest.TestCase):
 
     def test_no_middle_labels_survive_on_the_real_export(self):
         import glob, json
-        matches = glob.glob(os.path.join(_REPO, "league-data", "2031_preseason.json"))
+        matches = glob.glob(os.path.join(_REPO, "league-data", "2004_predraft.json"))
         if not matches:
-            self.skipTest("2031 preseason export not present")
-        data = json.load(open(matches[0]))
+            self.skipTest("2004 predraft export not present")
+        with open(matches[0], "r", encoding="utf-8") as fh:
+            data = json.load(fh)
         lg.normalize_positions(data)
         seen = {r.get("pos") for p in data["players"] for r in (p.get("ratings") or [])}
         self.assertTrue(seen.issubset(set(lg.CANONICAL_POS)), seen)

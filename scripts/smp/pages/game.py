@@ -60,7 +60,7 @@ from ..identity import team_identity
 # Read-only consumption of the sim model: the exact constants and player-impact
 # function behind simulate_league / sim_client_inputs, so the preview projection
 # below shows the same numbers the Monte Carlo uses (parity is tested).
-from ..simmodel import SIM_HCA, SIM_LOGISTIC_K, SIM_MOV_BLEND_K, player_game_impact
+from ..simmodel import SIM_HCA, SIM_LOGISTIC_K, SIM_MOV_BLEND_K, rotation_strength
 
 
 SHOT_ZONES = [("AtRim", "Rim"), ("LowPost", "Post"), ("MidRange", "Mid"), ("", "3P")]
@@ -722,8 +722,10 @@ def preview_strengths(teams: list[dict[str, Any]], players: list[dict[str, Any]]
             roster_by_tid[tid].append(player)
     roster_strength: dict[int, float] = {}
     for tid in tids:
-        rotation = sorted(roster_by_tid.get(tid, []), key=lambda p: -player_game_impact(p, season))[:10]
-        roster_strength[tid] = sum(player_game_impact(p, season) for p in rotation)
+        # simmodel.rotation_strength, not a local copy of it: the rotation sum is
+        # rank-decayed, and a flat re-implementation here silently published odds
+        # the simulator disagreed with.
+        roster_strength[tid] = rotation_strength(roster_by_tid.get(tid, []), season)
     mean_roster = sum(roster_strength.values()) / len(roster_strength) if roster_strength else 0.0
     strengths: dict[int, float] = {}
     for team in teams:

@@ -87,7 +87,12 @@ class TestOvrParity(unittest.TestCase):
                     mismatches += 1
                     if first_bad is None:
                         first_bad = (p.get("pid"), rr.get("season"), got, rr["ovr"])
-        self.assertGreater(checked, 5000, "expected ~5700 rating rows in export")
+        # The SMP II export is a pre-draft snapshot: one rating row per player,
+        # no season history. Guard that the loop actually checked the whole pool
+        # rather than silently skipping every row.
+        self.assertGreaterEqual(
+            checked, len(players), "expected a rating row for every player in export"
+        )
         self.assertEqual(
             mismatches,
             0,

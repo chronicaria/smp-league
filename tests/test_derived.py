@@ -15,7 +15,9 @@ if _SCRIPTS not in sys.path:
 
 from smp import appdata, derived  # noqa: E402
 from smp.core import ALL_PLAYERS_BY_PID, RATING_LABELS  # noqa: E402
+from smp.finance import FIN_CAP  # noqa: E402
 from smp.simmodel import (  # noqa: E402
+    ROTATION_SLOTS,
     REPLACEMENT_OVR,
     SIM_HCA,
     SIM_LOGISTIC_K,
@@ -24,6 +26,7 @@ from smp.simmodel import (  # noqa: E402
     player_game_impact,
     projected_margin,
     projected_spread,
+    rotation_weight,
     sim_client_inputs,
     sim_strengths,
     simulate_league,
@@ -233,7 +236,10 @@ def _league_export():
             players.append(_league_player(pid, tid, 55 + 6 * tid))
             pid += 1
     return {
-        "gameAttributes": {"season": 2030, "phase": 0, "numGames": 6},
+        # salaryCapType "none": SMP II is uncapped, so there is no cap figure and
+        # no tax line to publish.
+        "gameAttributes": {"season": 2030, "phase": 0, "numGames": 6,
+                           "salaryCapType": "none"},
         "teams": teams,
         "players": players,
         "games": [],
@@ -299,7 +305,10 @@ class TestAppData(unittest.TestCase):
         self.assertEqual(app["season"], 2030)
         # phase 0 (preseason): the newest COMPLETED season is the previous one
         self.assertEqual(app["ws_season"], 2029)
-        self.assertEqual(app["finance"], {"tax_line": 300000, "notes": "thousands"})
+        # Uncapped league: cap and tax_line are both the (absent) cap figure, and
+        # cap_type reports the export's rule rather than a hardcoded default.
+        self.assertEqual(app["finance"], {"cap": FIN_CAP, "cap_type": "none",
+                                          "tax_line": FIN_CAP, "notes": "thousands"})
 
         player = app["players"][0]
         for key in ["pid", "name", "pos", "age", "tid", "jersey", "ovr", "pot",
@@ -376,13 +385,23 @@ class TestSimStrength(unittest.TestCase):
         ALL_PLAYERS_BY_PID.clear()
 
     def _roster_signal(self, players, season):
+        # Rank-decayed rotation sum: the best man on the roster is worth
+        # rotation_weight(0) per point of overall, each slot below him less.
         totals = {}
         for tid in range(4):
             roster = [p for p in players if p["tid"] == tid]
-            rotation = sorted(roster, key=lambda p: -player_game_impact(p, season))[:10]
-            totals[tid] = sum(player_game_impact(p, season) for p in rotation)
+            rotation = sorted(roster, key=lambda p: -player_game_impact(p, season))
+            rotation = rotation[:ROTATION_SLOTS]
+            totals[tid] = sum(
+                player_game_impact(p, season, rank) for rank, p in enumerate(rotation)
+            )
         mean = sum(totals.values()) / len(totals)
         return {tid: value - mean for tid, value in totals.items()}
+
+    def test_rotation_weight_decays_by_slot(self):
+        weights = [rotation_weight(rank) for rank in range(ROTATION_SLOTS)]
+        self.assertEqual(weights, sorted(weights, reverse=True))
+        self.assertEqual(rotation_weight(-1), rotation_weight(0))  # clamped
 
     def test_fresh_season_is_pure_roster(self):
         data = _league_export()
