@@ -156,32 +156,37 @@ def team_finances_table(roster: list[dict[str, Any]], season: int, data: dict[st
 # Every dollar is earned on the court. There is no national pot and no appearance money:
 # a team that wins nothing earns nothing.
 #
-#   every regular-season win  +$4M   (all 36 weigh the same -- no ladder, no diminishing)
-#   playoff berth             +$20M
-#   each playoff win          +$8M
-#   reaching the finals       +$25M
-#   winning the title         +$50M
+#   every regular-season win  +$5M   (all 36 weigh the same -- no ladder, no diminishing)
+#   playoff berth             +$10M
+#   each playoff win          +$2.5M
+#   reaching the finals       +$7.5M
+#   winning the title         +$15M
 #
 # Derivation to the $1,000M league target (10 teams x $100M average payroll):
-#   180 league wins x $4M                                   = $720M
-#   postseason pool = 4 berths*20 + ~12 wins*8 + 2*25 + 50   = $276M
-#   league total $996M -> $99.6M average. An average 18-win team earns
-#   18*4 = $72M on the court plus ~$27.6M of postseason expected value.
+#   180 league wins x $5M                                     = $900M
+#   postseason pool = 4 berths*10 + ~12 wins*2.5 + 2*7.5 + 15  = $100M
+#   league total $1,000M -> exactly $100M average. An average 18-win team earns
+#   18*5 = $90M on the court plus ~$10M of postseason expected value.
 #
-# THE TRADEOFF, stated plainly: a flat per-win rate with a heavy postseason makes the
-# revenue spread WIDE. A 28-8 champion banks 28*4 + 20 + 6*8 + 25 + 50 = $255M against
-# a 8-28 team's $32M -- an 8.0x gap, versus 1.6x under the concave ladder this replaced.
-# With no salary cap, revenue IS spending power, so that gap compounds year over year.
-# It only actually bites if the commissioner enforces "spend no more than you earned" --
-# nothing in Basketball GM reads these numbers. If the league does enforce it and the
-# standings start ossifying, the cheapest brake is to raise FIN_BASE off zero; every
-# dollar of base compresses the ratio without touching the per-win rate.
+# The postseason is deliberately only 10% of league revenue. Wins are already the
+# proxy for making the playoffs, so paying a big berth bonus on top double-counts the
+# same achievement and makes one bracket swing a franchise's next three summers.
+#
+# THE TRADEOFF, stated plainly: with no base, revenue still spreads. A 28-8 champion
+# banks 28*5 + 10 + 6*2.5 + 7.5 + 15 = $187.5M against an 8-28 team's $40M -- a 4.7x
+# gap. That is down from 8.0x under the heavier postseason, but still well above the
+# 1.6x of the concave ladder these replaced. With no salary cap, revenue IS spending
+# power, so the gap compounds year over year. It only actually bites if the
+# commissioner enforces "spend no more than you earned" -- nothing in Basketball GM
+# reads these numbers. If the standings start ossifying, the cheapest brake is to
+# raise FIN_BASE off zero; every dollar of base compresses the ratio without touching
+# the per-win headline.
 FIN_BASE = 0            # no appearance money: win nothing, earn nothing
-FIN_PER_WIN = 4000      # +$4M per regular-season win, every win equal
-FIN_PLAYOFF = 20000     # +$20M for a playoff berth (clinch-gated)
-FIN_PLAYOFF_WIN = 8000  # +$8M per playoff game won
-FIN_FINALS = 25000      # +$25M for reaching the finals
-FIN_CHAMP = 50000       # +$50M for the title (a full run banks 20+48+25+50 = $143M)
+FIN_PER_WIN = 5000      # +$5M per regular-season win, every win equal
+FIN_PLAYOFF = 10000     # +$10M for a playoff berth (clinch-gated)
+FIN_PLAYOFF_WIN = 2500  # +$2.5M per playoff game won
+FIN_FINALS = 7500       # +$7.5M for reaching the finals
+FIN_CHAMP = 15000       # +$15M for the title (a full run banks 10+15+7.5+15 = $47.5M)
 
 # No cap and no tax. Kept as a display anchor only: the target average payroll, which
 # is what price_contracts.py calibrates the salary curve against.
