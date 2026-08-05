@@ -291,7 +291,7 @@
     const count = picked.length;
     const ovr = count ? O.roundOvr(O.teamOvrRaw(effectiveOvrs())) : null;
     const salary = picked.reduce((sum, p) => sum + (p.salary || 0), 0);
-    const capLine = payload.finance.tax_line;   // $100M hard cap
+    const capLine = payload.finance.tax_line;   // league-average payroll target; no cap
     const overCap = salary > capLine;
     const gap = Math.abs(salary - capLine);
     let avgWin = null;
@@ -313,8 +313,8 @@
     summaryEl.innerHTML = '<div class="ll-tiles">'
       + tile('Lineup OVR', ovr === null ? '—' : String(ovr), ovrSub, '')
       + tile('Total salary', fmtMoney(salary),
-             overCap ? fmtMoney(gap) + ' OVER the ' + fmtMoney(capLine) + ' cap — illegal roster'
-                     : fmtMoney(gap) + ' under the ' + fmtMoney(capLine) + ' cap',
+             overCap ? fmtMoney(gap) + ' above the ' + fmtMoney(capLine) + ' league average'
+                     : fmtMoney(gap) + ' below the ' + fmtMoney(capLine) + ' league average',
              overCap ? 'll-over-tax' : '')
       + tile('Average win %', avgWin === null ? '—' : fmtPct(avgWin),
              avgWin === null ? 'pick five players' : 'home/road average vs all ' + matchupRows.length + ' rosters', '')

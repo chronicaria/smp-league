@@ -150,24 +150,55 @@ def team_finances_table(roster: list[dict[str, Any]], season: int, data: dict[st
 # There is NO league share and NO carried cash: every dollar is earned on the
 # court, and each season's net revenue IS the team's budget for the next season.
 #
-# SMP II derivation. A 36-game season across 10 teams is 180 league wins (down from
-# SMP I's 225 at 45 games), and the cap fell from $300M to $100M, so every constant
-# below is re-solved rather than rescaled:
-#   (180*5.3 + 4*5 + 2*5 + 7) / 10 = $99.1M league-average net revenue,
-# sitting just under the $100M cap exactly as the old model sat under $300M.
-# The playoff field is now 4 teams (numGamesPlayoffSeries [5,5]), so the bonus
-# multipliers are 4 berths / 2 finalists / 1 champion.
-FIN_PER_WIN = 5300      # +$5.3M per regular-season win
-FIN_PLAYOFF = 5000      # +$5M for a playoff berth (clinch-gated)
-FIN_FINALS = 5000       # +$5M for a finals berth (clinch-gated)
-FIN_CHAMP = 7000        # +$7M for the championship (bonuses stack: champion banks 5+5+7=$17M)
+# SMP II has NO SALARY CAP and NO LUXURY TAX. Revenue is the only limit on spending,
+# which makes this curve the single most important balance lever in the league.
+#
+# THE LADDER. A flat national pot every team receives, plus a CONCAVE win payout: wins
+# are sorted into blocks of nine and each block pays less than the one before.
+#   wins  1-9  -> $2.2M each
+#   wins 10-18 -> $1.6M each
+#   wins 19-27 -> $1.1M each
+#   wins 28-36 -> $0.6M each
+#
+# The concavity is the whole anti-spiral mechanism. A naive linear per-win model solving
+# 180 * W = $1,000M pays $5.56M/win, which makes a 28-win title team earn ~$227M against
+# an 8-win team's ~$36M -- a 6.3x spread. With no cap that is a rich-get-richer loop, and
+# SMP I already had a dynasty complaint. The ladder pays the 30th win about a quarter of
+# what the 3rd win pays, so pulling away from the field stops buying you much.
+#   Measured best/worst: 28-8 champion $127.7M vs 6-30 team $75.2M = 1.70x.
+#
+# Derivation to the $1,000M league target (10 teams x $100M average payroll):
+#   postseason pool = 4 berths*4 + ~12.3 playoff wins*1.5 + 2 finalists*3 + 1 title*5
+#                   = $45.4M
+#   win ladder over a realistic 10-team spread = $335-347M
+#   flat pot = (1000 - 340 - 45) / 10 = ~$62M per team
+# Verified: a balanced .500 league pays $100.7M/team, a realistic spread $99.5M/team.
+FIN_BASE = 62000        # flat national pot every team banks before a ball is thrown
+FIN_WIN_LADDER = ((9, 2200), (9, 1600), (9, 1100), (9, 600))   # (block width, $ per win)
+FIN_PLAYOFF = 4000      # +$4M for a playoff berth (clinch-gated)
+FIN_PLAYOFF_WIN = 1500  # +$1.5M per playoff game won
+FIN_FINALS = 3000       # +$3M for reaching the finals
+FIN_CHAMP = 5000        # +$5M for the title (a max title run banks 4+6*1.5+3+5 = $21M)
 
-# SMP II runs a HARD cap. There is no luxury tax and no tax redistribution: the
-# engine refuses any signing or trade that would cross the line (salaryCapType
-# "hard"), so a tax bracket above the cap is unreachable by construction. The old
-# luxtax/pool/share model was deleted rather than rescaled.
-FIN_CAP = 100000        # $100M hard cap -- fallback only; league_cap() reads the export
-FIN_SOFT_CAP = FIN_CAP  # ponytail: import alias for pages/lineup.py; drop once it reads FIN_CAP
+# Reported so the finance page can quote a headline "what a win is worth" without
+# implying every win pays the same. This is the FIRST rung, i.e. the best case.
+FIN_PER_WIN = FIN_WIN_LADDER[0][1]
+
+# No cap and no tax. Kept as a display anchor only: the target average payroll, which
+# is what price_contracts.py calibrates the salary curve against.
+FIN_TARGET_PAYROLL = 100000
+FIN_CAP = 0             # 0 == uncapped; league_cap() still reads the export
+FIN_SOFT_CAP = FIN_TARGET_PAYROLL  # ponytail: import alias for pages/lineup.py
+
+
+def win_ladder_revenue(wins: float) -> float:
+    """Concave payout for ``wins`` regular-season wins. See FIN_WIN_LADDER."""
+    total, left = 0.0, max(0.0, min(float(wins), sum(w for w, _ in FIN_WIN_LADDER)))
+    for width, rate in FIN_WIN_LADDER:
+        take = min(left, width)
+        total += take * rate
+        left -= take
+    return total
 
 
 def league_cap(data: dict[str, Any] | None, season: int | None = None) -> float:
@@ -251,6 +282,27 @@ def finals_games_to_win(data: dict[str, Any], season: int | None = None) -> int:
                 and (season is None or safe_int(game.get("season"), -1) == season)):
             return max(1, safe_int(game.get("numGamesToWinSeries"), 4))
     return 4
+
+
+def playoff_wins(data: dict[str, Any], tid: int, season: int) -> int:
+    """Playoff GAMES won by a team in a season, summed across every round.
+
+    Each series row carries ``home.won`` / ``away.won``. Returns 0 during the regular
+    season, so the per-playoff-win payout only accrues once games are actually played.
+    """
+    series_by_season = {safe_int(ps.get("season")): ps
+                        for ps in (data.get("playoffSeries") or []) if isinstance(ps, dict)}
+    rounds = (series_by_season.get(season) or {}).get("series") or []
+    total = 0
+    for rnd in rounds:
+        for m in (rnd or []):
+            if not isinstance(m, dict):
+                continue
+            for side in ("home", "away"):
+                entry = m.get(side) or {}
+                if safe_int(entry.get("tid"), -90) == tid:
+                    total += safe_int(entry.get("won"), 0)
+    return total
 
 
 def playoff_status(data: dict[str, Any], tid: int, season: int) -> tuple[bool, bool, bool]:
@@ -347,25 +399,34 @@ def compute_league_finances(data: dict[str, Any], teams: list[dict[str, Any]], p
         ts = latest_team_season(team, season)
         won, lost = safe_int(ts.get("won"), 0), safe_int(ts.get("lost"), 0)
         made_po, made_finals, won_champ = playoff_status(data, tid, season)
-        earned_playoff = (FIN_PLAYOFF if made_po else 0) + (FIN_FINALS if made_finals else 0) + (FIN_CHAMP if won_champ else 0)
+        po_wins = playoff_wins(data, tid, season)
+        earned_playoff = ((FIN_PLAYOFF if made_po else 0)
+                          + FIN_PLAYOFF_WIN * po_wins
+                          + (FIN_FINALS if made_finals else 0)
+                          + (FIN_CHAMP if won_champ else 0))
         o = odds.get(tid) or {}
         proj_w = safe_float(o.get("proj_w"), float(won))
         po_p, fin_p, champ_p = safe_float(o.get("po")), safe_float(o.get("finals")), safe_float(o.get("champ"))
-        proj_playoff = FIN_PLAYOFF * po_p + FIN_FINALS * fin_p + FIN_CHAMP * champ_p
+        # Expected playoff wins: a berth is worth ~1.5 games won, a finals trip ~3 more,
+        # a title ~3 more on top. Rough, but it keeps the projection on the same scale as
+        # the earned figure instead of understating a contender's postseason revenue.
+        proj_po_wins = 1.5 * po_p + 3.0 * fin_p + 3.0 * champ_p
+        proj_playoff = (FIN_PLAYOFF * po_p + FIN_PLAYOFF_WIN * proj_po_wins
+                        + FIN_FINALS * fin_p + FIN_CHAMP * champ_p)
         adj_info = (FIN_ADJUSTMENTS.get(season) or {}).get(tid) or {}
         adj = safe_float(adj_info.get("amount"), 0.0)
         fin[tid] = {
             "adj": adj, "adj_note": adj_info.get("note", ""),
             "payroll": payroll, "committed_next": payroll_next, "dead": dead, "retained": retained, "won": won, "lost": lost,
-            # Hard-cap facts. over_cap can only be true on a god-mode-edited roster:
-            # the engine refuses any signing or trade that would cross the line, so
-            # this is a "something is wrong with this export" flag, not a tax bracket.
-            "cap": cap, "cap_room": cap - payroll, "over_cap": payroll > cap,
-            "win_rev_now": FIN_PER_WIN * won, "win_rev_proj": FIN_PER_WIN * proj_w,
+            # Uncapped: there is no line to be over. `cap` is kept as the target-payroll
+            # anchor so pages can show "vs league average" instead of "vs the cap".
+            "cap": cap, "cap_room": cap - payroll, "over_cap": False,
+            "base_rev": FIN_BASE,
+            "win_rev_now": win_ladder_revenue(won), "win_rev_proj": win_ladder_revenue(proj_w),
             "earned_playoff": earned_playoff, "proj_playoff": proj_playoff,
             "proj_w": proj_w, "po": po_p, "finals": fin_p, "champ": champ_p,
-            "revenue_now": FIN_PER_WIN * won + earned_playoff + adj,
-            "revenue_proj": FIN_PER_WIN * proj_w + proj_playoff + adj,
+            "revenue_now": FIN_BASE + win_ladder_revenue(won) + earned_playoff + adj,
+            "revenue_proj": FIN_BASE + win_ladder_revenue(proj_w) + proj_playoff + adj,
         }
     for tid, f in fin.items():
         # Net revenue = the team's whole budget for next season. Nothing is netted

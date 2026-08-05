@@ -65,6 +65,7 @@ from .pages.league import (
     render_schedule_page,
 )
 
+from .pages.draftroom import render_league_draft_page
 from .pages.compare import render_compare_page
 
 from .pages.trade import render_trade_page
@@ -275,6 +276,9 @@ def generate_site(
     write_text(out_dir / "history.html", render_history_page(data, teams))
     write_text(out_dir / "records.html", render_records_page(data, teams, season, start_season=start_season))
     write_text(out_dir / "draft.html", render_draft_page(data, teams, season))
+    # Before the draft every player is unsigned, so the pool IS the free-agent list.
+    write_text(out_dir / "league-draft.html",
+               render_league_draft_page(data, teams, season, fa_players))
     write_text(out_dir / "trade.html", render_trade_page(data, teams, players, season))
     write_text(out_dir / "compare.html", render_compare_page(data, teams, players, season, start_season))
 

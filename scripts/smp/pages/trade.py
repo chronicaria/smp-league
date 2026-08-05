@@ -133,7 +133,7 @@ def render_trade_page(data: dict[str, Any], teams: list[dict[str, Any]], players
     machine = f"""
     <section class="card home-section" data-app="trade">
       <div class="section-title-row"><h2>Trade Machine</h2><span class="muted small-copy"
-        title="Each side is re-projected after the swap: engine team OVR, a record from the sim's win-probability model, last season's Win Shares in vs out, and payroll against the $100M hard cap.">post-trade
+        title="Each side is re-projected after the swap: engine team OVR, a record from the sim's win-probability model, last season's Win Shares in vs out, and payroll against the $100M league-average target (there is no cap).">post-trade
         OVR, record &amp; win-share projections · payrolls incl. dead money</span></div>
       <div class="trade-grid">{_trade_side(0, "Team A")}{_trade_side(1, "Team B")}
       </div>

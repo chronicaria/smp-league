@@ -41,17 +41,16 @@ import json
 import sys
 
 # ---- league constants (BBGM "thousands": 100000 == $100M) -------------------
-SALARY_CAP = 100_000
+# SMP II has NO salary cap and no luxury tax. TARGET_PAYROLL is not a ceiling, it is
+# the average team payroll the curve is calibrated to produce -- the number that makes
+# a 12-man roster cost about what an average team earns in a season (see smp/finance.py).
+TARGET_PAYROLL = 100_000        # $100M per team
 MIN_CONTRACT = 1_000
 MAX_CONTRACT = 50_000
 ROSTER_SIZE = 12
 NUM_TEAMS = 10
 
-# Total league payroll to calibrate against, as a share of NUM_TEAMS * SALARY_CAP.
-# 0.785 leaves every team real cap room after a best-available draft while still
-# letting the top of the market reach the mid-$30Ms. Raising it squeezes the bottom
-# of rosters into the minimum; lowering it makes the cap stop binding at all.
-TARGET_LEAGUE_PAYROLL = int(0.785 * NUM_TEAMS * SALARY_CAP)
+TARGET_LEAGUE_PAYROLL = NUM_TEAMS * TARGET_PAYROLL
 
 PIVOT = 60      # ovr at which the curve passes through A
 WIDTH = 5       # salary doubles every WIDTH points of ovr
@@ -111,22 +110,36 @@ def _raw(ovr: int, age: int) -> float:
 
 
 def solve_scale(players: list[dict]) -> float:
-    """Solve A so the ROSTER_SIZE * NUM_TEAMS most valuable players total the target payroll."""
+    """Solve A so the ROSTER_SIZE * NUM_TEAMS most valuable players total the target payroll.
+
+    Solved by BISECTION rather than algebra. Dividing the target by the raw sum ignores
+    the [MIN_CONTRACT, MAX_CONTRACT] clamps: players whose raw price falls below the
+    minimum get pushed UP to it, so the realised total overshoots. Measured on this pool
+    it landed 0.69% high with 9 players clamped. Bisecting on the clamped price converges
+    on the real total instead.
+    """
     slots = ROSTER_SIZE * NUM_TEAMS
     ranked = sorted(players, key=draft_value, reverse=True)[:slots]
     if not ranked:
         raise ValueError("degenerate pool: cannot solve scale")
     # A pool smaller than the league's roster slots can't be worth a full league payroll.
-    # Without this, a 30-player file would try to absorb all $785M and clip players at the
-    # max contract -- wrong, and silently so.
+    # Without this, a 30-player file would try to absorb the whole target and clip players
+    # at the max contract -- wrong, and silently so.
     target = TARGET_LEAGUE_PAYROLL * len(ranked) / slots
-    denom = sum(
-        _raw(p["ovr"], p["age"]) * DURATION_PREMIUM[contract_length(p["ovr"], p["pot"], p["age"])]
-        for p in ranked
-    )
-    if denom <= 0:
-        raise ValueError("degenerate pool: cannot solve scale")
-    return target / denom
+
+    def total_at(scale: float) -> int:
+        return sum(price(p["ovr"], p["pot"], p["age"], scale) for p in ranked)
+
+    lo, hi = 1.0, 1_000_000.0
+    if total_at(hi) < target:          # even the ceiling can't reach it
+        return hi
+    for _ in range(200):
+        mid = (lo + hi) / 2
+        if total_at(mid) < target:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
 
 
 def draft_value(p: dict) -> float:
@@ -177,8 +190,9 @@ def report(league: dict, scale: float, rows: list[dict]) -> None:
     sal = sorted(r["amount"] for r in ranked)
     print(f"scale A = {scale:.1f}   (pivot {PIVOT} ovr, doubling every {WIDTH})")
     print(f"top-{len(ranked)} payroll  ${sum(sal) / 1000:,.0f}M "
-          f"of ${NUM_TEAMS * SALARY_CAP / 1000:,.0f}M cap space "
-          f"({100 * sum(sal) / (NUM_TEAMS * SALARY_CAP):.0f}%)")
+          f"vs ${TARGET_LEAGUE_PAYROLL / 1000:,.0f}M target "
+          f"({100 * sum(sal) / TARGET_LEAGUE_PAYROLL:.1f}%)   "
+          f"avg team ${sum(sal) / NUM_TEAMS / 1000:,.1f}M")
     print(f"  max ${sal[-1] / 1000:.1f}M   median ${sal[len(sal) // 2] / 1000:.1f}M   "
           f"min ${sal[0] / 1000:.1f}M   at-minimum {sum(1 for s in sal if s == MIN_CONTRACT)}")
 
@@ -203,12 +217,12 @@ def report(league: dict, scale: float, rows: list[dict]) -> None:
         for r in rostered:
             by_team[r["p"]["tid"]] += r["amount"]
         abbrev = {t["tid"]: t["abbrev"] for t in league["teams"]}
-        over = [t for t, v in by_team.items() if v > SALARY_CAP]
-        print("\n  per-team payroll (this export is already drafted):")
+        print("\n  per-team payroll (no cap -- these are spend levels, not limits):")
         for t in sorted(by_team):
-            flag = "  OVER CAP" if by_team[t] > SALARY_CAP else ""
-            print(f"    {abbrev.get(t, t):<5} ${by_team[t] / 1000:>6.1f}M{flag}")
-        print(f"  teams over the ${SALARY_CAP / 1000:.0f}M hard cap: {len(over)}/{len(by_team)}")
+            print(f"    {abbrev.get(t, t):<5} ${by_team[t] / 1000:>6.1f}M")
+        vals = sorted(by_team.values())
+        print(f"  spread ${vals[0] / 1000:.1f}M - ${vals[-1] / 1000:.1f}M "
+              f"(target average ${TARGET_PAYROLL / 1000:.0f}M)")
 
 
 def main() -> int:

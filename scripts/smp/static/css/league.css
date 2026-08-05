@@ -125,3 +125,36 @@ a.rafters-flag:hover .rafters-pennant, a.rafters-flag:focus-visible .rafters-pen
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------- league draft: the snake board ---------- */
+/* One cell per slot, tinted with the owning team's primary so a manager can find
+   their own column at a glance. Cells stay legible when empty (pre-draft) and
+   carry the player's name once the pick is in. */
+.dr-card-grid,
+.fa-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .5rem; }
+.dr-board { width: 100%; border-collapse: separate; border-spacing: 2px; }
+.dr-board th { font-size: .72rem; color: var(--muted); font-weight: 600; padding: .2rem .3rem; }
+.dr-board th.dr-round { text-align: right; white-space: nowrap; }
+.dr-slot {
+  --slot-team: var(--line);
+  position: relative;
+  min-width: 5.4rem;
+  padding: .38rem .45rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--slot-team);
+  border-radius: .15rem;
+  background: color-mix(in srgb, var(--slot-team) 9%, var(--panel-2));
+  vertical-align: top;
+  line-height: 1.25;
+}
+.dr-slot-team { display: block; font-size: .68rem; font-weight: 700; letter-spacing: .04em; color: var(--muted); }
+.dr-slot-open { display: block; font-size: .78rem; color: var(--muted-2, var(--muted)); font-variant-numeric: tabular-nums; }
+.dr-slot-player { display: block; font-size: .78rem; font-weight: 600; color: var(--text); text-decoration: none; }
+.dr-slot-player:hover { color: var(--accent); }
+.dr-slot--filled { background: color-mix(in srgb, var(--slot-team) 20%, var(--panel-2)); }
+.dr-pool-portrait { width: 32px; height: 32px; border-radius: 50%; margin-right: .45rem; vertical-align: middle; }
+
+@media (max-width: 720px) {
+  .dr-slot { min-width: 4.2rem; padding: .3rem .34rem; }
+  .dr-slot-player, .dr-slot-open { font-size: .72rem; }
+}

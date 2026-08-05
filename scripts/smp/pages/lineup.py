@@ -64,7 +64,7 @@ def render_lineup_page(
       <div>
         <h1>Lineup Lab</h1>
         <p class="muted">Build a five — or a full ten · projected overall, win odds vs every roster, salary vs the
-        {esc(cap_m)} hard cap · the URL tracks your lineup</p>
+        salary vs the {esc(cap_m)} league average · the URL tracks your lineup</p>
       </div>
       <div class="muted">{esc(season)} ratings</div>
     </section>

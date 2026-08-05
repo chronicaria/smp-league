@@ -79,7 +79,10 @@ from ..portraits import portrait_html
 from ..finance import (
     FIN_CHAMP,
     FIN_FINALS,
-    FIN_PER_WIN,
+    FIN_BASE,
+    FIN_PLAYOFF_WIN,
+    FIN_WIN_LADDER,
+    win_ladder_revenue,
     FIN_PLAYOFF,
     fmt_money_pm,
     team_finances_table,
@@ -1115,7 +1118,7 @@ def season_results_card(team: dict[str, Any], data: dict[str, Any], teams: list[
 
 
 def hero_cap_chip(tfin: dict[str, Any] | None, cap: float, season: int) -> str:
-    """Hero chip: payroll against the cap. Under a hard cap the only money number
+    """Hero chip: payroll against the league-average target. With no cap the only money number
     that constrains a roster is the room left under the line, so that is what
     every team subpage carries in the hero instead of a revenue projection."""
     if not tfin or not cap:
@@ -1338,11 +1341,14 @@ def finance_ledger_card(tfin: dict[str, Any] | None, year: int, cap: float | Non
 
     budget_now = f'<strong>{fmt_money(f["net_revenue_now"])}</strong>'
     budget_proj = f'<strong>{fmt_money(f["net_revenue_proj"])}</strong>'
+    base = f.get("base_rev", 0)
     rows = [
-        row(f'Win payouts <span class="muted small-copy">({_fin_mil(FIN_PER_WIN)} × W)</span>',
+        row('National pot <span class="muted small-copy">(every team, before a ball is thrown)</span>',
+            fmt_money_pm(base), fmt_money_pm(base)),
+        row('Win payouts <span class="muted small-copy">(ladder — later wins pay less)</span>',
             f'{fmt_money_pm(f["win_rev_now"])} <span class="muted small-copy">({f["won"]} W)</span>',
             f'{fmt_money_pm(f["win_rev_proj"])} <span class="muted small-copy">(proj {fmt_number(f["proj_w"], 1)} W)</span>'),
-        row('Playoff bonuses <span class="muted small-copy">(earned · projected = EV)</span>', fmt_money_pm(f["earned_playoff"]), fmt_money_pm(f["proj_playoff"])),
+        row('Postseason <span class="muted small-copy">(berth · per win · finals · title)</span>', fmt_money_pm(f["earned_playoff"]), fmt_money_pm(f["proj_playoff"])),
     ]
     if abs(f.get("adj", 0)) > 1e-9:
         adj_cls = "delta-up" if f["adj"] > 0 else "delta-down"
@@ -1357,18 +1363,11 @@ def finance_ledger_card(tfin: dict[str, Any] | None, year: int, cap: float | Non
     surplus = f["surplus_next"]
     bc = "delta-up" if bal >= 0 else "delta-down"
 
-    # What the team can actually add in `year`: the lower of what it earned and what
-    # the hard cap leaves. Whichever binds is what the manager needs to know.
+    # With no cap, the only limit on what a team can add is what it earned.
     committed = f["committed_next"]
-    cap_room = (cap - committed) if cap else None
-    if cap_room is None:
-        spendable, bind = surplus, "revenue"
-    elif cap_room <= surplus:
-        spendable, bind = cap_room, "the cap"
-    else:
-        spendable, bind = surplus, "revenue"
-    tip = (f"Lower of {year} net revenue and room under the hard cap, minus committed "
-           f"{year} payroll. Right now {bind} is the binding limit.")
+    spendable = surplus
+    tip = (f"{year} net revenue minus committed {year} payroll. There is no cap, so "
+           f"revenue is the only limit on what you can add.")
 
     tiles = "".join([
         _tile(f"{year - 1} payroll", fmt_money(f["payroll"]),
@@ -1396,10 +1395,9 @@ def finance_ledger_card(tfin: dict[str, Any] | None, year: int, cap: float | Non
 def cap_sheet_card(tfin: dict[str, Any] | None, data: dict[str, Any] | None, season: int, roster_size: int, league_fin: dict[str, Any]) -> str:
     """Cap sheet: payroll against the cap, room left, and roster spots filled.
 
-    This is what the old Luxury Tax card became. Under a hard cap there is no tax
-    to pay and no tax pool to share out — payroll simply may not cross the line —
-    so the only live questions are how much room is left and whether the team is
-    capped out, i.e. short of even the league minimum."""
+    This is what the old Luxury Tax card became. SMP II has no cap and no tax, so the
+    live questions are simply what the team is spending and how that compares with the
+    league-average target the salary curve is calibrated against."""
     if not tfin:
         return ""
     rules = _cap_rules(data, season)
@@ -1420,7 +1418,7 @@ def cap_sheet_card(tfin: dict[str, Any] | None, data: dict[str, Any] | None, sea
     if max_roster:
         tiles.append(_tile("Roster", f"{roster_size} / {max_roster}",
                            tip=f"Rosters are locked at {max_roster} players."))
-    cap_type = "hard cap" if rules["hard"] else "soft cap"
+    cap_type = "league average" if not rules["hard"] else "hard cap"
     if room < 0:
         note = f"Payroll is over the {cap_type} — this roster cannot be submitted as-is."
     elif rules["minimum"] and room < rules["minimum"]:
@@ -1439,27 +1437,34 @@ def cap_sheet_card(tfin: dict[str, Any] | None, data: dict[str, Any] | None, sea
 
 
 def finance_rules_card(data: dict[str, Any] | None = None, season: int | None = None) -> str:
-    stacked = FIN_PLAYOFF + FIN_FINALS + FIN_CHAMP
+    stacked = FIN_PLAYOFF + 6 * FIN_PLAYOFF_WIN + FIN_FINALS + FIN_CHAMP
+    # "$2.2M for wins 1-9, then $1.6M, $1.1M, $0.6M" -- read straight off the ladder
+    _lo, _rungs = 0, []
+    for _w, _rate in FIN_WIN_LADDER:
+        _rungs.append(f"{_fin_mil(_rate)} for wins {_lo + 1}-{_lo + _w}")
+        _lo += _w
+    ladder_copy = ", then ".join(_rungs)
     # League wins/season = numGames * numTeams / 2 -- derived, not hardcoded, because
     # SMP I ran 45 games (225 wins) and SMP II runs 36 (180). Falls back to SMP II's
     # shape if the export can't be read.
     n_teams = len(active_team_ids(data.get("teams") or [])) if data else 10
     games = regular_season_length(data, season) if (data and season is not None) else 36
     league_wins = (games * n_teams) // 2 if games and n_teams else 180
-    avg_budget = (league_wins * FIN_PER_WIN + 4 * FIN_PLAYOFF + 2 * FIN_FINALS + FIN_CHAMP) / (n_teams or 10)
+    # Average budget under the ladder: every team banks the flat pot, and the league's
+    # wins are shared out, so the average team's ladder payout is the payout at
+    # league_wins / n_teams wins. Postseason money is a fixed pool spread over the field.
+    avg_wins = league_wins / (n_teams or 10)
+    post_pool = 4 * FIN_PLAYOFF + 12 * FIN_PLAYOFF_WIN + 2 * FIN_FINALS + FIN_CHAMP
+    avg_budget = FIN_BASE + win_ladder_revenue(avg_wins) + post_pool / (n_teams or 10)
     # Cap copy comes off gameAttributes, not a FIN_* constant, so the rules card
     # cannot state a cap the league does not actually enforce.
     rules = _cap_rules(data, season if season is not None else 0)
     cap = rules["cap"]
     cap_label = f'{fmt_money(cap)} {"hard" if rules["hard"] else "soft"} cap' if cap else "Hard cap"
-    cap_line = (f"<strong>{cap_label}.</strong> "
-                "You cannot sign, trade for, or re-sign your way past it — there is no Bird exception")
-    min_line = ("The only move available to a capped-out team is a <strong>"
-                f'{fmt_money(rules["minimum"])} minimum contract</strong>' if rules["minimum"]
-                else "The only move available to a capped-out team is a <strong>minimum contract</strong>")
-    budget_note = (f"League-average budget is {_fin_mil(avg_budget)}, "
-                   f'{"just under" if avg_budget <= cap else "about"} the cap.' if cap
-                   else f"League-average budget is {_fin_mil(avg_budget)}.")
+    min_line = (f'Minimum contract is <strong>{fmt_money(rules["minimum"])}</strong>'
+                if rules["minimum"] else "Every roster spot still costs the league minimum")
+    budget_note = (f"League-average budget is {_fin_mil(avg_budget)} — the number the "
+                   f"salary curve is calibrated against, so an average team roughly breaks even.")
     return f"""
     <section class="card">
       <div class="section-title-row"><h2>How Finances Work</h2></div>
@@ -1467,15 +1472,16 @@ def finance_rules_card(data: dict[str, Any] | None = None, season: int | None = 
         <div>
           <h3>Revenue</h3>
           <ul class="fin-list">
-            <li>Per win <strong>+{_fin_mil(FIN_PER_WIN)}</strong> — every dollar is earned on the court</li>
-            <li>Playoff berth <strong>+{_fin_mil(FIN_PLAYOFF)}</strong> · Finals <strong>+{_fin_mil(FIN_FINALS)}</strong> · Title <strong>+{_fin_mil(FIN_CHAMP)}</strong></li>
+            <li>Everyone banks <strong>{_fin_mil(FIN_BASE)}</strong> before a ball is thrown</li>
+            <li>Wins pay on a <strong>ladder</strong>: {ladder_copy}</li>
+            <li>Playoff berth <strong>+{_fin_mil(FIN_PLAYOFF)}</strong> · each playoff win <strong>+{_fin_mil(FIN_PLAYOFF_WIN)}</strong> · Finals <strong>+{_fin_mil(FIN_FINALS)}</strong> · Title <strong>+{_fin_mil(FIN_CHAMP)}</strong></li>
           </ul>
-          <p class="muted small-copy">Bonuses stack once clinched — the champion banks +{_fin_mil(stacked)}.</p>
+          <p class="muted small-copy">A full title run banks +{_fin_mil(stacked)} on top of the ladder. Later wins pay less on purpose — running away with the league does not buy you a bigger war chest.</p>
         </div>
         <div>
-          <h3>Cap &amp; Budget</h3>
+          <h3>Spending</h3>
           <ul class="fin-list">
-            <li>{cap_line}</li>
+            <li><strong>No salary cap and no luxury tax.</strong> What you earn is what you can spend</li>
             <li>{min_line}</li>
             <li>Net revenue is the whole next-season budget — no carried cash</li>
           </ul>

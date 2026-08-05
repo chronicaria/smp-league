@@ -144,6 +144,7 @@ NAV_MAIN = [
     ("Players", "players/index.html", "players"),
 ]
 NAV_LEAGUE = [
+    ("League Draft", "league-draft.html", "league-draft"),
     ("Free Agency", "free-agency.html", "free-agency"),
     ("Draft", "draft.html", "draft"),
     ("History", "history.html", "history"),
@@ -519,7 +520,7 @@ def free_agents(data: dict[str, Any]) -> list[dict[str, Any]]:
     SMP I hid anyone under 50 ovr *and* under 50 pot, which concealed 57 of 135 free
     agents. On the SMP II pool that filter hides 250 of 376 -- including real rotation
     players -- so the page would lie about what is actually signable. With a 12-man
-    roster and a hard cap, the cheap end of the wire is exactly what a capped-out team
+    roster and no cap, the cheap end of the wire is exactly what a cash-poor team
     needs to see.
     """
     return [p for p in active_players(data) if p.get("tid") == FREE_AGENT_TID]

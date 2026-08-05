@@ -921,7 +921,7 @@ def _salary_cap(data: dict[str, Any], season: int) -> float:
 def home_finances_table(data: dict[str, Any], teams: list[dict[str, Any]], players: list[dict[str, Any]], season: int) -> str:
     """League-wide cap sheet for the home page: one row per team, most cap room first.
 
-    The cap is HARD, so there is no budget to overspend and no luxury tax to
+    There is no cap and no luxury tax, so payroll is compared against the league
     pay: payroll against the cap is the whole story.
     """
     odds = (league_sim(data, teams, season) or {}).get("teams") or None
@@ -972,11 +972,11 @@ def home_finances_table(data: dict[str, Any], teams: list[dict[str, Any]], playe
         rows.append("".join(cells))
     cap_label = fmt_money(cap) if cap else "the cap"
     next_note = f" {year} committed is next season's guaranteed salary (roster, dead money, retention)." if show_next else ""
-    detail = (f"Cap room = {cap_label} hard cap − payroll; a team at the cap can only add "
-              f"minimum contracts, and there is no luxury tax to buy its way past.{next_note}")
+    detail = (f"No salary cap and no luxury tax — spending is limited only by revenue. "
+              f"Payroll is shown against the {cap_label} league-average target.{next_note}")
     return f"""
     <section class="card home-section">
-      <div class="section-title-row"><h2>Team Finances</h2><span class="muted small-copy" title="{esc(detail)}">payroll against the {esc(cap_label)} hard cap</span></div>
+      <div class="section-title-row"><h2>Team Finances</h2><span class="muted small-copy" title="{esc(detail)}">payroll vs the {esc(cap_label)} league average</span></div>
       {table_html(headers, rows, table_id="home-finances")}
     </section>
     """
