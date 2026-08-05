@@ -338,16 +338,41 @@ def rafters_strip_html(data: dict[str, Any], teams: list[dict[str, Any]]) -> str
 
 
 def fa_asking_price(player: dict[str, Any], season: int) -> float:
-    """Starting bid in BBGM thousands: the model's annual value on a one-year deal.
+    """What this free agent is asking per year, in BBGM thousands.
 
-    Rounded to a whole $1M, matching how every contract in the league is priced --
-    the wire should not quote a precision the salary scale does not have.
+    The export's contract IS the ask. scripts/price_contracts.py prices every player in
+    the league off one Monte Carlo projection of his own sub-ratings and writes the
+    result back as {amount, exp}, so that number is what the game quotes at the table and
+    what the draft board already prints. Re-deriving an ask from simmodel's ovr/age curve
+    predates that repricing and disagreed with it badly -- Carmelo Anthony asked $6M here
+    against the $24M on his card in the game -- so the curve is now only the fallback for
+    a pool nobody has priced.
     """
+    amount = safe_float((player.get("contract") or {}).get("amount"))
+    if amount > 0:
+        return amount
     rating = latest_rating(player, season)
     born = (player.get("born") or {}).get("year")
     age_val = (season - born) if isinstance(born, int) else 25
     raw = fa_salary_by_length(safe_int(rating.get("ovr")), safe_int(rating.get("pot")), age_val)[0] * 1000
     return float(max(1, round(raw / 1000)) * 1000)
+
+
+def fa_asking_term(player: dict[str, Any], season: int) -> str:
+    """"thru 2008" for a priced ask, or "" when the export carries no term.
+
+    The ask is an annual figure on a deal of a known length -- quoting the dollars
+    without the term is what made the old asking price unreadable. Quoted as an
+    expiry rather than a year count, exactly as BBGM quotes it: price_contracts.py
+    values a deal over the seasons AFTER the one being played and the site counts
+    guaranteed years inclusive of it, so a year count would have to pick a side of
+    that disagreement. The expiry is the same number either way.
+    """
+    contract = player.get("contract") or {}
+    exp = contract.get("exp")
+    if not isinstance(exp, int) or safe_float(contract.get("amount")) <= 0 or exp < season:
+        return ""
+    return f"thru {exp}"
 
 
 def fa_market_is_priced(bids: list[float]) -> bool:
@@ -380,7 +405,9 @@ def free_agent_row(player: dict[str, Any], season: int, root: str, rating_ranges
     ]
     if show_bid:
         bid_k = fa_asking_price(player, season)
+        exp = safe_int((player.get("contract") or {}).get("exp"), 0)
         cells.append(td(fmt_money(bid_k), sort=bid_k, cls="group-start"))
+        cells.append(td(esc(exp or "—"), sort=exp))
     for key, _ in TEAM_RATING_RANK_KEYS:
         value = rating.get(key)
         lo, hi = rating_ranges.get(key, (0.0, 0.0))
@@ -411,7 +438,8 @@ def render_free_agency_page(players: list[dict[str, Any]], teams: list[dict[str,
 
     headers: list = ["Name", "Pos", "Age", "Ovr", "Pot"]
     if show_bids:
-        headers.append(("Starting Bid", "group-start"))
+        headers.append(("Asking", "group-start"))
+        headers.append("Thru")
     for key, label in TEAM_RATING_RANK_KEYS:
         headers.append((label, "group-start" if key in RATING_GROUP_STARTS else ""))
     rows = [free_agent_row(p, season, "", rating_ranges, show_bid=show_bids) for p in sorted_players]
@@ -423,7 +451,8 @@ def render_free_agency_page(players: list[dict[str, Any]], teams: list[dict[str,
                      f"{rating.get('ovr', '—')} ovr / {rating.get('pot', '—')} pot"]
         ask_chip = ""
         if show_bids:
-            ask_chip = (f'<span class="fa-card-ask" title="Starting bid: annual value of a one-year deal">'
+            term = fa_asking_term(p, season)
+            ask_chip = (f'<span class="fa-card-ask" title="Asking price{" — " + term if term else ""}">'
                         f'{fmt_money(fa_asking_price(p, season))}</span>')
         fa_cards.append(
             f'<a class="fa-card" href="{player_url(p)}">'
@@ -447,7 +476,8 @@ def render_free_agency_page(players: list[dict[str, Any]], teams: list[dict[str,
     # With every ask clamped to the same minimum, a Starting Bid column is a wall of one
     # number, so the page says why it is missing instead of printing a false precision.
     hero_note = (
-        "Starting bid is the annual value of a one-year deal, set by overall, potential, and age."
+        "Asking price is the player's own priced contract — the annual salary the league values "
+        "him at, from a Monte Carlo projection of his ratings over the length of the deal."
         if show_bids else
         "Ranked by overall. Asking prices are held back this year — the salary model still puts most of "
         "this market at the league minimum, so a bid column would print one number down the whole board."

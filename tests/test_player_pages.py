@@ -158,9 +158,10 @@ class TestTradingCard(unittest.TestCase):
         # The card section itself carries no team style attr; silver comes from CSS.
         self.assertIn('<section class="player-card player-card--fa">', html)
         self.assertIn("Free Agent", html)
-        # Asking-price plate uses the free-agency board's model, not the contract stub.
+        # Asking-price plate quotes the player's own priced contract.
         self.assertIn("Asking price", html)
         self.assertIn(lg.fmt_money(pp.fa_asking_price(player, 2031)), html)
+        self.assertIn("$20M", html)  # contract.amount, not a re-derived curve value
 
     def test_rostered_card_has_no_asking_price(self):
         teams_by_tid = {t["tid"]: t for t in TEAMS}
@@ -327,10 +328,81 @@ class TestContractSection(unittest.TestCase):
         self.assertIn("Asking price", pp.contract_summary_html(_player(16, tid=-1), 2031))
         self.assertIn("Current deal", pp.contract_summary_html(_player(17), 2031))
 
+    def test_fa_asking_price_is_the_priced_contract_not_a_curve(self):
+        # scripts/price_contracts.py writes the ask into contract.amount; the page
+        # must quote that number, or the site disagrees with the game.
+        player = _player(19, tid=-1, contract={"amount": 24000, "exp": 2034})
+        self.assertEqual(pp.fa_asking_price(player, 2031), 24000)
+        html = pp.contract_summary_html(player, 2031)
+        self.assertIn("$24M/yr", html)
+        self.assertIn("thru 2034", html)
+
+    def test_fa_asking_price_falls_back_to_the_curve_when_unpriced(self):
+        player = _player(20, tid=-1, contract={})
+        self.assertGreater(pp.fa_asking_price(player, 2031), 0)
+        self.assertEqual(pp.fa_asking_term(player, 2031), "")
+
     def test_ovr_delta_carries_vs_last_season_tooltip(self):
         html = pp.player_ratings_html(_player(18), 2031)
         self.assertIn("Change vs last season", html)
         self.assertIn("vs last season", html)
+
+
+class TestRatingPercentiles(unittest.TestCase):
+    """Every rating is ranked against the same reference pool: the top 120 by ovr."""
+
+    @staticmethod
+    def _pool(n=200):
+        # ovr/pot climb with pid, so the pool's top 120 is pids 80..199 and the
+        # percentile of any value is predictable.
+        return [
+            {
+                "pid": pid, "firstName": "P", "lastName": str(pid), "tid": -1,
+                "retiredYear": None, "born": {"year": 2005},
+                "ratings": [{"season": 2031, "pos": "SG", "ovr": pid % 100,
+                             "pot": pid % 100, "drb": pid % 100}],
+                "stats": [],
+            }
+            for pid in range(n)
+        ]
+
+    def test_ramps_cover_exactly_the_reference_pool(self):
+        from smp.core import RATING_POOL_SIZE, rating_percentile_ramps
+        ramps = rating_percentile_ramps(self._pool(), 2031)
+        self.assertEqual(len(ramps["ovr"]), RATING_POOL_SIZE)
+        self.assertIn("drb", ramps)
+
+    def test_pool_smaller_than_120_uses_everyone(self):
+        from smp.core import rating_percentile_ramps
+        ramps = rating_percentile_ramps(self._pool(40), 2031)
+        self.assertEqual(len(ramps["ovr"]), 40)
+
+    def test_pct_rank_is_the_tied_run_midpoint(self):
+        from smp.core import pct_rank
+        self.assertEqual(pct_rank(5, [1, 2, 3, 4]), 100.0)     # above everyone
+        self.assertEqual(pct_rank(0, [1, 2, 3, 4]), 0.0)       # below everyone
+        self.assertEqual(pct_rank(2, [1, 2, 2, 4]), 50.0)      # midpoint of the tie
+        self.assertIsNone(pct_rank(2, [1]))                    # no distribution
+        self.assertIsNone(pct_rank(None, [1, 2, 3]))
+
+    def test_ratings_card_shows_a_percentile_chip_per_rating(self):
+        from smp.core import rating_percentile_ramps
+        ramps = rating_percentile_ramps(self._pool(), 2031)
+        player = _player(21, ratings=[{"season": 2031, "pos": "SG", "ovr": 90, "pot": 92, "drb": 90}])
+        html = pp.player_ratings_html(player, 2031, ramps)
+        self.assertIn("rating-pct", html)
+        self.assertIn("percentile of the top 120 players", html)
+        self.assertIn("chip = percentile of the top 120", html)
+        # One chip per rating both the player and the reference pool carry: this
+        # synthetic pool rates ovr/pot/drb, so the other 14 rows stay bare.
+        self.assertEqual(html.count('class="rating-pct"'), 3)
+        # ovr 90 tops a pool whose best is 99 -> high but not perfect.
+        self.assertIn("percentile", html)
+
+    def test_no_reference_pool_renders_the_card_unchanged(self):
+        html = pp.player_ratings_html(_player(22), 2031)
+        self.assertNotIn("rating-pct", html)
+        self.assertNotIn("percentile", html)
 
 
 class TestRatingDeltas(unittest.TestCase):

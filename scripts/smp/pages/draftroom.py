@@ -12,10 +12,16 @@ The pick order is derived the same way zengm's draft/genOrderFantasy.ts builds i
 round 1 runs in tid order and the order reverses every round. Deriving it (rather than
 reading draftPicks) means the page is correct before the draft has been staged, which is
 exactly when people want to look at it.
+
+The pool's default order is the league's own board (league-data/draft_board_order.csv),
+exported from the game's Undrafted screen, so the page opens on the same ranking the room
+is looking at. Sorting by overall instead would put a 28-year-old 73 above LeBron.
 """
 
 from __future__ import annotations
 
+import csv
+from pathlib import Path
 from typing import Any
 
 from ..core import (
@@ -44,6 +50,42 @@ from ..identity import team_identity
 from ..portraits import portrait_html
 
 DEFAULT_ROUNDS = 12
+
+BOARD_ORDER_FILE = "draft_board_order.csv"
+
+
+def load_board_order(path: Path | str | None) -> dict[str, int]:
+    """``{player name: rank}`` from the league's exported Undrafted board.
+
+    Row order is the ranking; the other columns are ignored (they duplicate the export).
+    A missing or unreadable file just means "no board", and the pool falls back to
+    overall — the page must never fail to build over a cosmetic ordering.
+    """
+    if path is None:
+        return {}
+    path = Path(path)
+    if not path.is_file():
+        return {}
+    try:
+        with path.open(encoding="utf-8-sig", newline="") as fh:
+            rows = list(csv.DictReader(fh))
+    except (OSError, csv.Error, UnicodeDecodeError):
+        return {}
+    order: dict[str, int] = {}
+    for rank, row in enumerate(rows):
+        name = (row.get("Name") or "").strip()
+        if name:
+            order.setdefault(name, rank)
+    return order
+
+
+def board_rank(player: dict[str, Any], order: dict[str, int]) -> int:
+    """Board position, or a sentinel that parks unlisted players after the board.
+
+    Anyone the board does not name is either newly drafted (so gone from the pool
+    anyway) or arrived after it was exported; either way he sorts last, by overall.
+    """
+    return order.get(player_name(player).strip(), len(order) + 1)
 
 
 def _rounds(data: dict[str, Any], season: int) -> int:
@@ -153,13 +195,18 @@ def _pool_row(player: dict[str, Any], season: int, ramps: dict[str, list[float]]
     return "".join(cells)
 
 
-def pool_html(players: list[dict[str, Any]], season: int) -> str:
-    def board_sort(p: dict[str, Any]) -> tuple:
+def _board_sort_key(season: int, order: dict[str, int]):
+    """Board rank first, then overall/potential for anyone the board doesn't list."""
+    def key(p: dict[str, Any]) -> tuple:
         r = latest_rating(p, season)
-        return (-safe_int(r.get("ovr")), -safe_int(r.get("pot")), player_name(p))
+        return (board_rank(p, order), -safe_int(r.get("ovr")), -safe_int(r.get("pot")), player_name(p))
+    return key
 
+
+def pool_html(players: list[dict[str, Any]], season: int, order: dict[str, int] | None = None) -> str:
+    order = order or {}
     # Hide players who are under 50 in BOTH ovr and pot -- no use now, no upside later.
-    ordered = sorted((p for p in players if is_draftable(p, season)), key=board_sort)
+    ordered = sorted((p for p in players if is_draftable(p, season)), key=_board_sort_key(season, order))
 
     # Heat ramps are built from the AVAILABLE draftees only, so the color a cell gets
     # answers "how does this rate against who is actually still on the board".
@@ -177,7 +224,7 @@ def pool_html(players: list[dict[str, Any]], season: int) -> str:
     <section class="card">
       <div class="section-title-row">
         <h2>Available Players</h2>
-        <span class="muted small-copy">{len(ordered)} available · shaded by percentile among them · click any column to sort</span>
+        <span class="muted small-copy">{len(ordered)} available · {"league board order" if order else "by overall"} · shaded by percentile among them · click any column to sort</span>
       </div>
       {table_html(headers, rows, table_id="draft-pool",
                   empty_message="Nobody left.", pos_filter=True,
@@ -185,15 +232,13 @@ def pool_html(players: list[dict[str, Any]], season: int) -> str:
     </section>"""
 
 
-def top_board_html(players: list[dict[str, Any]], season: int, limit: int = 12) -> str:
+def top_board_html(players: list[dict[str, Any]], season: int, limit: int = 12,
+                   order: dict[str, int] | None = None) -> str:
     """The consensus top of the board, as cards — what people look at first."""
-    def key(p: dict[str, Any]) -> tuple:
-        r = latest_rating(p, season)
-        return (-safe_int(r.get("ovr")), -safe_int(r.get("pot")), player_name(p))
-
+    order = order or {}
     cards = []
     eligible = [p for p in players if is_draftable(p, season)]
-    for rank, p in enumerate(sorted(eligible, key=key)[:limit], 1):
+    for rank, p in enumerate(sorted(eligible, key=_board_sort_key(season, order))[:limit], 1):
         r = latest_rating(p, season)
         amount = safe_float((p.get("contract") or {}).get("amount"), 0.0)
         cards.append(
@@ -209,18 +254,20 @@ def top_board_html(players: list[dict[str, Any]], season: int, limit: int = 12) 
     <section class="card">
       <div class="section-title-row">
         <h2>Top of the Board</h2>
-        <span class="muted small-copy">best available by overall</span>
+        <span class="muted small-copy">{"best available, league board order" if order else "best available by overall"}</span>
       </div>
       <div class="fa-card-grid">{"".join(cards)}</div>
     </section>"""
 
 
 def render_league_draft_page(data: dict[str, Any], teams: list[dict[str, Any]],
-                             season: int, pool: list[dict[str, Any]]) -> str:
+                             season: int, pool: list[dict[str, Any]],
+                             board_order: dict[str, int] | None = None) -> str:
     active = active_teams_for_season(teams, season)
     rounds = _rounds(data, season)
     total = rounds * len(active)
     eligible = [p for p in pool if is_draftable(p, season)]
+    order = board_order or {}
     body = f"""
     <section class="page-hero">
       <div>
@@ -229,8 +276,8 @@ def render_league_draft_page(data: dict[str, Any], teams: list[dict[str, Any]],
         {len(eligible)} eligible players on the board</p>
       </div>
     </section>
-    {top_board_html(pool, season)}
+    {top_board_html(pool, season, order=order)}
     {board_html(data, teams, season)}
-    {pool_html(pool, season)}
+    {pool_html(pool, season, order=order)}
     """
     return page_html("League Draft", body, teams, root="", active="league-draft")

@@ -18,6 +18,7 @@ from ..core import (
     RATING_GROUPS,
     RATING_LABELS,
     RETIRED_TID,
+    active_players,
     age,
     combine_stat_rows,
     efg_pct,
@@ -31,20 +32,26 @@ from ..core import (
     fmt_ratio,
     fmt_signed,
     game_slug_from_gid,
+    heat_style_pct,
     initials,
     injury_html,
     latest_rating,
     made_attempted,
     made_pct,
     mood_html,
+    ordinal,
     page_html,
+    pct_rank,
     per_game,
     player_name,
     player_slug,
     player_url,
     playoff_stats_since,
     plus_minus_class,
+    RATING_POOL_SIZE,
     rating_delta_html,
+    rating_percentile_ramps,
+    rating_skills,
     ratio,
     regular_stats_since,
     safe_float,
@@ -68,7 +75,7 @@ from ..charts import development_chart_html
 
 # The FA asking price is the free-agency board's model — import it so the two
 # pages can never drift apart.
-from .league import fa_asking_price
+from .league import fa_asking_price, fa_asking_term
 
 from ..identity import crest_svg, monogram_svg, team_css_vars, team_identity
 
@@ -117,6 +124,23 @@ _AWARD_ORDER = {name: i for i, name in enumerate(AWARD_CRESTS)}
 # led_league(data) is tiny but called for every player page; memoize per export.
 # The cache pins the export dict itself so a recycled id() can never alias.
 _LED_CACHE: dict[int, tuple[dict[str, Any], dict[int, dict[str, float]]]] = {}
+
+
+# Percentile ramps are the same for every player page, so build them once per export.
+# Same cache shape as _LED_CACHE: pinned to the export dict so a recycled id can't alias.
+_RAMP_CACHE: dict[int, tuple[dict[str, Any], int, dict[str, list[float]]]] = {}
+
+
+def _percentile_ramps(data: dict[str, Any] | None, season: int) -> dict[str, list[float]]:
+    """Rating ramps over the league's top RATING_POOL_SIZE players by overall."""
+    if not data:
+        return {}
+    cached = _RAMP_CACHE.get(id(data))
+    if cached is None or cached[0] is not data or cached[1] != season:
+        _RAMP_CACHE.clear()  # one export per build; don't hoard stale ones
+        cached = (data, season, rating_percentile_ramps(active_players(data), season))
+        _RAMP_CACHE[id(data)] = cached
+    return cached[2]
 
 
 def _led_index(data: dict[str, Any] | None) -> dict[int, dict[str, float]]:
@@ -330,9 +354,12 @@ def trading_card_html(player: dict[str, Any], teams_by_tid: dict[int, dict[str, 
     ask_html = ""
     if is_fa:
         bid_k = fa_asking_price(player, season)
+        term = fa_asking_term(player, season)
         ask_html = (
-            f'<span class="plate-ask" title="One-year asking salary — same model as the Free Agency board">'
-            f'<span>Asking price</span><strong>{fmt_money(bid_k)}</strong></span>'
+            f'<span class="plate-ask" title="Asking salary per year'
+            f'{" on a deal " + esc(term) if term else ""}'
+            f' — same number as the Free Agency board and the draft pool">'
+            f'<span>Asking price</span><strong>{fmt_money(bid_k)}/yr</strong></span>'
         )
     plate_html = (
         f'<div class="player-card-plate">'
@@ -342,14 +369,14 @@ def trading_card_html(player: dict[str, Any], teams_by_tid: dict[int, dict[str, 
         f'{ask_html}</div>'
     )
 
-    skills = rating.get("skills") or []
+    skills = rating_skills(rating)
     skills_html = ""
     if skills:
         chips = "".join(
             f'<span class="player-card-skill" title="{esc(SKILL_LABELS.get(s, s))}">{esc(s)}</span>'
             for s in skills
         )
-        skills_html = f'<div class="player-card-skills">{chips}</div>'
+        skills_html = f'<div class="player-card-skills" aria-label="Attributes">{chips}</div>'
 
     dots_html = _career_team_dots(player, teams_by_tid, root)
     foot = f'<div class="player-card-foot">{dots_html}</div>' if dots_html else ""
@@ -376,9 +403,12 @@ def player_bio_html(player: dict[str, Any], teams_by_tid: dict[int, dict[str, An
     """Bio facts card (sidebar): team, vitals, draft, contract, family."""
     rating = latest_rating(player, season)
     team_html = team_label(player.get("tid"), teams_by_tid, "../")
-    # Free agents: the export's contract stub is meaningless — show the market ask.
+    # Free agents are asking, not earning — say so, and quote the term with the money.
     if safe_int(player.get("tid"), RETIRED_TID) == FREE_AGENT_TID:
+        term = fa_asking_term(player, season)
         contract_html = f"{fmt_money(fa_asking_price(player, season))}/yr asking"
+        if term:
+            contract_html += f' <span class="muted small-copy">{esc(term)}</span>'
     else:
         contract_html = fmt_contract(player)
     born = player.get("born") or {}
@@ -432,10 +462,29 @@ def player_bio_html(player: dict[str, Any], teams_by_tid: dict[int, dict[str, An
     """
 
 
-def player_ratings_html(player: dict[str, Any], season: int) -> str:
+def _pct_badge(key: str, label: str, rating: dict[str, Any], ramps: dict[str, list[float]]) -> str:
+    """Percentile chip for one rating, ranked against the reference pool.
+
+    A rating in isolation says nothing -- 60 passing is elite for a center and ordinary
+    for a point guard's league -- so every number gets its rank against the same 120
+    players, tinted on the same red-to-green ramp the tables use.
+    """
+    pct = pct_rank(rating.get(key), ramps.get(key, []))
+    if pct is None:
+        return ""
+    shown = max(1, min(99, round(pct)))
+    style = heat_style_pct(rating.get(key), ramps.get(key, []))
+    return (f'<span class="rating-pct" style="{style}" '
+            f'title="{esc(label)}: {esc(ordinal(shown))} percentile of the top '
+            f'{RATING_POOL_SIZE} players">{shown}</span>')
+
+
+def player_ratings_html(player: dict[str, Any], season: int,
+                        ramps: dict[str, list[float]] | None = None) -> str:
     """Current-ratings card: Overall/Potential topline plus the 15 subratings,
-    each with a green/red delta vs last season."""
+    each with a green/red delta vs last season and a percentile vs the top 120."""
     rating = latest_rating(player, season)
+    ramps = ramps or {}
     rating_groups_html = []
     for title, keys in RATING_GROUPS:
         rows = []
@@ -443,7 +492,7 @@ def player_ratings_html(player: dict[str, Any], season: int) -> str:
             rows.append(f"""
             <div class="rating-row">
               <span>{esc(RATING_LABELS[key])}</span>
-              <strong>{rating_delta_html(player, key, rating)}</strong>
+              <strong>{rating_delta_html(player, key, rating)}{_pct_badge(key, RATING_LABELS[key], rating, ramps)}</strong>
             </div>
             """)
         rating_groups_html.append(f"""
@@ -453,13 +502,16 @@ def player_ratings_html(player: dict[str, Any], season: int) -> str:
         </div>
         """)
 
+    note = "green/red = vs last season"
+    if ramps:
+        note += f" · chip = percentile of the top {RATING_POOL_SIZE}"
     return f"""
     <section class="card ratings-current">
-      <div class="section-title-row"><h2>Current Ratings</h2><span class="muted small-copy">green/red = vs last season</span></div>
+      <div class="section-title-row"><h2>Current Ratings</h2><span class="muted small-copy">{esc(note)}</span></div>
       <div class="rating-panel full-rating-panel">
         <div class="rating-topline">
-          <div class="big-rating"><span>Overall</span><strong>{_delta_titled(player, 'ovr', rating)}</strong></div>
-          <div class="big-rating"><span>Potential</span><strong>{_delta_titled(player, 'pot', rating)}</strong></div>
+          <div class="big-rating"><span>Overall</span><strong>{_delta_titled(player, 'ovr', rating)}{_pct_badge('ovr', 'Overall', rating, ramps)}</strong></div>
+          <div class="big-rating"><span>Potential</span><strong>{_delta_titled(player, 'pot', rating)}{_pct_badge('pot', 'Potential', rating, ramps)}</strong></div>
         </div>
         <div class="rating-groups">{''.join(rating_groups_html)}</div>
       </div>
@@ -939,8 +991,12 @@ def ratings_table(player: dict[str, Any], start_season: int) -> str:
         ]
         for key in RATING_LABELS:
             cells.append(td(esc(rating.get(key, "—")), sort=rating.get(key)))
-        skills = " ".join(f'<span class="mini-skill">{esc(skill)}</span>' for skill in rating.get("skills") or []) or "—"
-        cells.append(td(skills, sort=" ".join(rating.get("skills") or [])))
+        codes = rating_skills(rating)
+        skills = " ".join(
+            f'<span class="mini-skill" title="{esc(SKILL_LABELS.get(code, code))}">{esc(code)}</span>'
+            for code in codes
+        ) or "—"
+        cells.append(td(skills, sort=" ".join(codes)))
         rows.append("".join(cells))
     return f"""
     <section class="card stats-section">
@@ -1218,13 +1274,17 @@ def contract_summary_html(player: dict[str, Any], season: int) -> str:
 
     tiles = []
     if is_fa:
-        # Asking price comes from the free-agency board's salary model, not the
-        # export's contract stub — the two must always agree.
+        # One asking price for the whole site: the free-agency board, the draft pool and
+        # this tile all read the player's priced contract, so they cannot drift apart.
         bid_k = fa_asking_price(player, season)
+        term = fa_asking_term(player, season)
         tiles.append(
-            f'<div class="vital-tile" title="One-year asking salary — same model as the Free Agency board">'
+            f'<div class="vital-tile" title="Asking salary per year — same number as the '
+            f'Free Agency board and the draft pool">'
             f'<span>Asking price</span><strong>{fmt_money(bid_k)}/yr</strong></div>'
         )
+        if term:
+            tiles.append(f'<div class="vital-tile"><span>Term sought</span><strong>{esc(term)}</strong></div>')
     else:
         tiles.append(f'<div class="vital-tile"><span>Current deal</span><strong>{fmt_contract(player)}</strong></div>')
     if rostered and exp is not None and exp >= season and amount > 0:
@@ -1336,7 +1396,7 @@ def render_player_pages(player: dict[str, Any], teams: list[dict[str, Any]], sea
     # highs and form stack in the sidebar.
     ov_main = [
         player_summary_rows(player, teams_by_tid, season, start_season),
-        player_ratings_html(player, season),
+        player_ratings_html(player, season, _percentile_ramps(data, season)),
         development_chart_html(player, season, proj),
     ]
     ov_side = [

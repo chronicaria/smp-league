@@ -33,6 +33,12 @@ counter (SMP I ran 2026-2031, SMP II restarts at 2026), so "which export is
 newest" cannot be decided from the files themselves — it is decided by which
 directory they sit in.
 
+`league-data/draft_board_order.csv` is the League Draft page's default ordering:
+Basketball GM's own Undrafted screen, exported as-is, one row per player in board
+order. Only the `Name` column is read. Re-export it after picks are made to keep
+the page showing what the room is looking at; without the file the pool falls back
+to sorting by overall, which ranks a 28-year-old 73 above LeBron.
+
 ## Regenerate
 
 ```sh

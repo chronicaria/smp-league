@@ -65,7 +65,7 @@ from .pages.league import (
     render_schedule_page,
 )
 
-from .pages.draftroom import render_league_draft_page
+from .pages.draftroom import BOARD_ORDER_FILE, load_board_order, render_league_draft_page
 from .pages.compare import render_compare_page
 
 from .pages.trade import render_trade_page
@@ -277,8 +277,10 @@ def generate_site(
     write_text(out_dir / "records.html", render_records_page(data, teams, season, start_season=start_season))
     write_text(out_dir / "draft.html", render_draft_page(data, teams, season))
     # Before the draft every player is unsigned, so the pool IS the free-agent list.
+    # The board's default order is the league's own, exported beside the league JSON.
     write_text(out_dir / "league-draft.html",
-               render_league_draft_page(data, teams, season, fa_players))
+               render_league_draft_page(data, teams, season, fa_players,
+                                        board_order=load_board_order(json_path.parent / BOARD_ORDER_FILE)))
     write_text(out_dir / "trade.html", render_trade_page(data, teams, players, season))
     write_text(out_dir / "compare.html", render_compare_page(data, teams, players, season, start_season))
 

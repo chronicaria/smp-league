@@ -230,7 +230,7 @@ class TestFreeAgencyPage(_ExportCase):
         self.assertIn("fa-card-strip", self.html)
         self.assertEqual(self.html.count('class="fa-card"'), 10)
         self.assertIn("fa-card-ask", self.html)
-        self.assertIn("Starting bid", self.html)
+        self.assertIn("Asking price", self.html)
 
     def test_cards_use_portrait_chain(self):
         # every card carries either an <img> portrait or a monogram fallback
