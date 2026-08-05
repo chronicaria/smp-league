@@ -154,14 +154,25 @@
     
     <section class="card">
       <div class="section-title-row">
-        <h2>Development</h2>
-        <span class="muted small-copy"><span class="chart-key chart-key-ovr"></span> Overall · <span class="chart-key chart-key-pot"></span> Potential</span>
+        <h2>Development &amp; Projection</h2>
+        <span class="muted small-copy"><span class="chart-key chart-key-ovr"></span> Overall · <span class="chart-key chart-key-pot"></span> Potential · <span class="chart-key proj-key-band"></span> Projection</span>
       </div>
-      <svg viewBox="0 0 640 170" class="dev-chart" role="img" aria-label="Overall and potential by season">
-        <line x1="34" y1="146.0" x2="628" y2="146.0" class="chart-grid"/><text x="28" y="149.5" class="chart-tick" text-anchor="end">35</text><line x1="34" y1="61.0" x2="628" y2="61.0" class="chart-grid"/><text x="28" y="64.5" class="chart-tick" text-anchor="end">40</text><text x="34.0" y="162" class="chart-tick" text-anchor="middle">2004</text>
-        <polyline points="34.0,78.0" class="line-pot"/><circle cx="34.0" cy="78.0" r="3" class="line-pot-dot"><title>2004: 39</title></circle>
-        <polyline points="34.0,78.0" class="line-ovr"/><circle cx="34.0" cy="78.0" r="3" class="line-ovr-dot"><title>2004: 39</title></circle>
-      </svg>
+      <div class="chart-wrap proj-wrap" data-proj-chart>
+        <svg viewBox="0 0 660 210" class="proj-chart" role="img" aria-label="Overall rating history and 6-season projection">
+          <line x1="34" y1="182.0" x2="646" y2="182.0" class="chart-grid"/><text x="28" y="185.5" class="chart-tick" text-anchor="end">10</text><line x1="34" y1="130.5" x2="646" y2="130.5" class="chart-grid"/><text x="28" y="134.0" class="chart-tick" text-anchor="end">20</text><line x1="34" y1="79.0" x2="646" y2="79.0" class="chart-grid"/><text x="28" y="82.5" class="chart-tick" text-anchor="end">30</text><line x1="34" y1="27.5" x2="646" y2="27.5" class="chart-grid"/><text x="28" y="31.0" class="chart-tick" text-anchor="end">40</text><text x="34.0" y="202" class="chart-tick" text-anchor="middle">2004</text><text x="136.0" y="202" class="chart-tick" text-anchor="middle">2005</text><text x="238.0" y="202" class="chart-tick" text-anchor="middle">2006</text><text x="340.0" y="202" class="chart-tick" text-anchor="middle">2007</text><text x="442.0" y="202" class="chart-tick" text-anchor="middle">2008</text><text x="544.0" y="202" class="chart-tick" text-anchor="middle">2009</text><text x="646.0" y="202" class="chart-tick" text-anchor="middle">2010</text>
+          <polygon points="34.0,32.6 136.0,32.6 238.0,58.4 340.0,79.0 442.0,94.4 544.0,115.0 646.0,130.5 646.0,161.4 544.0,156.2 442.0,140.8 340.0,125.3 238.0,94.4 136.0,68.7 34.0,32.6" class="proj-band-80"/>
+          <polygon points="34.0,32.6 136.0,48.1 238.0,68.7 340.0,89.3 442.0,109.9 544.0,125.3 646.0,135.6 646.0,156.2 544.0,145.9 442.0,135.6 340.0,115.0 238.0,89.3 136.0,63.5 34.0,32.6" class="proj-band-50"/>
+          <polyline points="34.0,32.6 136.0,58.4 238.0,79.0 340.0,99.6 442.0,125.3 544.0,135.6 646.0,145.9" class="proj-median"/><circle cx="34.0" cy="32.6" r="3" class="proj-median-dot"><title>2004: 39 proj</title></circle><circle cx="136.0" cy="58.4" r="3" class="proj-median-dot"><title>2005: 34 proj</title></circle><circle cx="238.0" cy="79.0" r="3" class="proj-median-dot"><title>2006: 30 proj</title></circle><circle cx="340.0" cy="99.6" r="3" class="proj-median-dot"><title>2007: 26 proj</title></circle><circle cx="442.0" cy="125.3" r="3" class="proj-median-dot"><title>2008: 21 proj</title></circle><circle cx="544.0" cy="135.6" r="3" class="proj-median-dot"><title>2009: 19 proj</title></circle><circle cx="646.0" cy="145.9" r="3" class="proj-median-dot"><title>2010: 17 proj</title></circle>
+          <polyline points="34.0,32.6" class="line-pot"/><circle cx="34.0" cy="32.6" r="3" class="line-pot-dot"><title>2004: 39</title></circle>
+          <polyline points="34.0,32.6" class="line-ovr"/><circle cx="34.0" cy="32.6" r="3" class="line-ovr-dot"><title>2004: 39</title></circle>
+          <line x1="34.0" y1="12" x2="34.0" y2="182" class="proj-divider"/>
+          <line class="proj-hover-line" data-proj-hover-line y1="12" y2="182" style="display:none"/>
+          <circle class="proj-hover-dot" data-proj-hover-dot r="3.5" style="display:none"/>
+        </svg>
+        <div class="chart-tooltip" data-proj-tooltip hidden></div>
+      </div>
+      <p class="muted small-copy" title="Median of 1,000 Monte Carlo simulations of the game's aging model; bands are the 80% (P10–P90) and 50% (P25–P75) ranges">6-season projection · potential ceiling ≈ 39</p>
+      <script type="application/json" id="proj-data-448">{"cur":2004,"potPeak":39,"hist":{"s":[2004],"ovr":[39.0],"pot":[39.0]},"proj":{"s":[2004,2005,2006,2007,2008,2009,2010],"p10":[39.0,32.0,27.0,21.0,18.0,15.0,14.0],"p25":[39.0,33.0,28.0,23.0,19.0,17.0,15.0],"p50":[39.0,34.0,30.0,26.0,21.0,19.0,17.0],"p75":[39.0,36.0,32.0,28.0,24.0,21.0,19.0],"p90":[39.0,39.0,34.0,30.0,27.0,23.0,20.0]},"g":{"ml":34,"mt":12,"pw":612,"ph":170,"lo":10,"hi":43,"smin":2004,"smax":2010,"w":660,"h":210}}</script>
     </section>
     </div><aside class="ov-side">
     <section class="card player-bio">
