@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import bisect
 import html
 import json
 import random
@@ -1339,6 +1340,42 @@ def seed_cell_style(pct: float) -> str:
         return ""
     alpha = 0.06 + 0.55 * min(1.0, pct / 100.0)
     return f"background-color: rgba(91,157,255,{alpha:.2f})"
+
+
+def pct_ramp(values: Iterable[Any]) -> list[float]:
+    """Sorted numeric values for a column, ready for ``heat_style_pct``."""
+    out = []
+    for v in values:
+        f = safe_float(v, float("nan"))
+        if math.isfinite(f):
+            out.append(f)
+    out.sort()
+    return out
+
+
+def heat_style_pct(value: Any, ramp: list[float]) -> str:
+    """Red-to-green tint by PERCENTILE within a column, not by its min/max range.
+
+    Min-max is the wrong scale for ratings: most of a pool sits in a narrow band, so a
+    linear ramp paints nearly everyone the same mid-tone and the two extremes carry all
+    the color. Ranking against the column's own distribution spends the whole spectrum
+    on the players who are actually being compared.
+
+    Ties share a percentile (midpoint of the tied run), so equal ratings always get
+    equal color.
+    """
+    if not ramp:
+        return ""
+    v = safe_float(value, float("nan"))
+    if not math.isfinite(v):
+        return ""
+    lo = bisect.bisect_left(ramp, v)
+    hi = bisect.bisect_right(ramp, v)
+    if len(ramp) < 2:
+        return ""
+    frac = ((lo + hi) / 2.0) / len(ramp)          # midpoint rank of the tied run
+    hue = 4 + max(0.0, min(1.0, frac)) * 126      # 4 = red, 130 = green
+    return f"background-color: hsla({hue:.0f}, 55%, 41%, .45)"
 
 
 def heat_style(value: Any, lo: float, hi: float, direction: int) -> str:

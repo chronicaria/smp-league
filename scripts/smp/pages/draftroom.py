@@ -16,12 +16,13 @@ exactly when people want to look at it.
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 from ..core import (
     RATING_GROUP_STARTS,
+    heat_style_pct,
     is_draftable,
+    pct_ramp,
     TEAM_RATING_RANK_KEYS,
     active_teams_for_season,
     age,
@@ -126,7 +127,7 @@ def board_html(data: dict[str, Any], teams: list[dict[str, Any]], season: int) -
     </section>"""
 
 
-def _pool_row(player: dict[str, Any], season: int, ranges: dict[str, tuple[float, float]]) -> str:
+def _pool_row(player: dict[str, Any], season: int, ramps: dict[str, list[float]]) -> str:
     rating = latest_rating(player, season)
     born = (player.get("born") or {}).get("year")
     contract = player.get("contract") or {}
@@ -137,15 +138,18 @@ def _pool_row(player: dict[str, Any], season: int, ranges: dict[str, tuple[float
            sort=player_name(player), cls="name-cell"),
         td(esc(rating.get("pos", "—")), sort=rating.get("pos", "")),
         td(age(player, season), sort=(season - born if isinstance(born, int) else None)),
-        td(esc(rating.get("ovr") if rating.get("ovr") is not None else "—"), sort=rating.get("ovr")),
-        td(esc(rating.get("pot") if rating.get("pot") is not None else "—"), sort=rating.get("pot")),
+        td(esc(rating.get("ovr") if rating.get("ovr") is not None else "—"), sort=rating.get("ovr"),
+           style=heat_style_pct(rating.get("ovr"), ramps.get("ovr", []))),
+        td(esc(rating.get("pot") if rating.get("pot") is not None else "—"), sort=rating.get("pot"),
+           style=heat_style_pct(rating.get("pot"), ramps.get("pot", []))),
         td(fmt_money(amount) if amount else "—", sort=amount, cls="group-start"),
         td(esc(safe_int(contract.get("exp"), 0) or "—"), sort=safe_int(contract.get("exp"), 0)),
     ]
     for key, _ in TEAM_RATING_RANK_KEYS:
         value = rating.get(key)
         cls = "group-start" if key in RATING_GROUP_STARTS else ""
-        cells.append(td(esc(value if value is not None else "—"), sort=value, cls=cls))
+        cells.append(td(esc(value if value is not None else "—"), sort=value, cls=cls,
+                        style=heat_style_pct(value, ramps.get(key, []))))
     return "".join(cells)
 
 
@@ -157,25 +161,23 @@ def pool_html(players: list[dict[str, Any]], season: int) -> str:
     # Hide players who are under 50 in BOTH ovr and pot -- no use now, no upside later.
     ordered = sorted((p for p in players if is_draftable(p, season)), key=board_sort)
 
-    ranges: dict[str, tuple[float, float]] = {}
-    for key, _ in TEAM_RATING_RANK_KEYS:
-        vals = [float(latest_rating(p, season).get(key))
-                for p in ordered
-                if latest_rating(p, season).get(key) is not None
-                and math.isfinite(safe_float(latest_rating(p, season).get(key), float("nan")))]
-        ranges[key] = (min(vals), max(vals)) if vals else (0.0, 0.0)
+    # Heat ramps are built from the AVAILABLE draftees only, so the color a cell gets
+    # answers "how does this rate against who is actually still on the board".
+    ramps: dict[str, list[float]] = {}
+    for key in ["ovr", "pot"] + [k for k, _ in TEAM_RATING_RANK_KEYS]:
+        ramps[key] = pct_ramp(latest_rating(p, season).get(key) for p in ordered)
 
     headers: list = ["Player", "Pos", "Age", "Ovr", "Pot",
                      ("Salary", "group-start"), "Thru"]
     for key, label in TEAM_RATING_RANK_KEYS:
         headers.append((label, "group-start" if key in RATING_GROUP_STARTS else ""))
-    rows = [_pool_row(p, season, ranges) for p in ordered]
+    rows = [_pool_row(p, season, ramps) for p in ordered]
 
     return f"""
     <section class="card">
       <div class="section-title-row">
         <h2>Available Players</h2>
-        <span class="muted small-copy">{len(ordered)} available · click any column to sort</span>
+        <span class="muted small-copy">{len(ordered)} available · shaded by percentile among them · click any column to sort</span>
       </div>
       {table_html(headers, rows, table_id="draft-pool",
                   empty_message="Nobody left.", pos_filter=True,
