@@ -17,7 +17,14 @@ _SCRIPTS = os.path.join(_REPO, "scripts")
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
-from smp.core import current_season, free_agents, normalize_positions, team_sort_key  # noqa: E402
+from smp.core import (  # noqa: E402
+    current_season,
+    free_agents,
+    latest_rating,
+    normalize_positions,
+    player_name,
+    team_sort_key,
+)
 from smp.pages import draftroom as dr  # noqa: E402
 
 _EXPORT = os.path.join(_REPO, "league-data", "2004_predraft.json")
@@ -107,10 +114,20 @@ class TestShippedBoardMatchesTheExport(unittest.TestCase):
                    if p["tid"] < 0 and f"{p['firstName']} {p['lastName']}".strip() not in self.order]
         self.assertEqual(missing, [])
 
-    def test_lebron_leads_the_board_over_higher_rated_veterans(self):
+    def test_board_order_outranks_overall_somewhere_in_the_live_pool(self):
+        """The board is not just an ovr sort — find a live pair where they disagree.
+
+        Derived from whoever is still unsigned rather than named players, so the
+        assertion survives draft night instead of failing every time a pick lands.
+        """
         pool = free_agents(self.data)
+        by_rank = sorted(pool, key=lambda p: dr.board_rank(p, self.order))
+        pairs = [(a, b) for a, b in zip(by_rank, by_rank[1:])
+                 if latest_rating(a, self.season)["ovr"] < latest_rating(b, self.season)["ovr"]]
+        self.assertTrue(pairs, "board order is indistinguishable from an overall sort")
+        ahead, behind = pairs[0]
         html = dr.pool_html(pool, self.season, order=self.order)
-        self.assertLess(html.index("LeBron James"), html.index("Tracy McGrady"))
+        self.assertLess(html.index(player_name(ahead)), html.index(player_name(behind)))
 
 
 class TestBoardSlots(unittest.TestCase):
@@ -122,16 +139,33 @@ class TestBoardSlots(unittest.TestCase):
         cls.season = current_season(cls.data)
         cls.teams = sorted(cls.data["teams"], key=team_sort_key)
 
-    def test_rochester_holds_the_first_overall_pick(self):
-        html = dr.board_html(self.data, self.teams, self.season)
-        first_slot = html.split('title="Round 1, pick 1')[1].split("</td>")[0]
-        self.assertIn("Andrei Kirilenko", first_slot)
-        self.assertIn("dr-slot--filled", html)
-        self.assertIn("1 of 120 picks made", html)
+    def _picks_made(self):
+        """(round, pick) -> "Team Player", straight from the export."""
+        by_tid = {t["tid"]: t for t in self.teams}
+        out = {}
+        for p in self.data["players"]:
+            d = p.get("draft") or {}
+            if d.get("round", 0) >= 1 and p["tid"] >= 0:
+                out[(d["round"], d["pick"])] = (by_tid[d["tid"]]["abbrev"], player_name(p))
+        return out
 
-    def test_a_drafted_player_leaves_the_pool(self):
+    def test_every_recorded_pick_shows_in_its_slot(self):
+        picks = self._picks_made()
+        self.assertTrue(picks, "no picks recorded in the export")
+        html = dr.board_html(self.data, self.teams, self.season)
+        for (rnd, pick), (abbrev, name) in sorted(picks.items()):
+            slot = html.split(f'title="Round {rnd}, pick {pick} ')[1].split("</td>")[0]
+            self.assertIn(name, slot)
+            self.assertIn(abbrev, slot)
+        self.assertIn(f"{len(picks)} of 120 picks made", html)
+
+    def test_rochester_holds_the_first_overall_pick(self):
+        self.assertEqual(self._picks_made().get((1, 1)), ("ROC", "Andrei Kirilenko"))
+
+    def test_drafted_players_leave_the_pool(self):
         html = dr.pool_html(free_agents(self.data), self.season)
-        self.assertNotIn("Andrei Kirilenko", html)
+        for _, name in self._picks_made().values():
+            self.assertNotIn(name, html)
 
 
 if __name__ == "__main__":
