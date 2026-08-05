@@ -77,7 +77,7 @@ jobs:
           # lines already no-op on paths that do not exist, which they will not in year
           # one: with zero completed games there is no games/ and no rivalries/.
           rm -rf assets games players teams rivalries
-          rm -f compare.html draft.html free-agency.html history.html index.html records.html schedule.html trade.html rivalries.html classics.html wrapped.html lineup.html simulator.html
+          rm -f compare.html draft.html league-draft.html free-agency.html history.html index.html records.html schedule.html trade.html rivalries.html classics.html wrapped.html lineup.html simulator.html
           python3 scripts/league_generator.py "$NEWEST" --out .
 
       - name: Commit regenerated site
