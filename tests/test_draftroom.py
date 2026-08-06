@@ -19,6 +19,7 @@ if _SCRIPTS not in sys.path:
 
 from smp.core import (  # noqa: E402
     current_season,
+    esc,
     free_agents,
     latest_rating,
     normalize_positions,
@@ -166,7 +167,8 @@ class TestBoardSlots(unittest.TestCase):
         html = dr.board_html(self.data, self.teams, self.season)
         for (rnd, pick), (abbrev, name) in sorted(picks.items()):
             slot = html.split(f'title="Round {rnd}, pick {pick} ')[1].split("</td>")[0]
-            self.assertIn(name, slot)
+            # esc(), not the raw name: Jermaine O'Neal reaches the page as O&#x27;Neal.
+            self.assertIn(esc(name), slot)
             self.assertIn(abbrev, slot)
         self.assertIn(f"{len(picks)} of 120 picks made", html)
 
@@ -176,7 +178,7 @@ class TestBoardSlots(unittest.TestCase):
     def test_drafted_players_leave_the_pool(self):
         html = dr.pool_html(free_agents(self.data), self.season)
         for _, name in self._picks_made().values():
-            self.assertNotIn(name, html)
+            self.assertNotIn(esc(name), html)
 
 
 if __name__ == "__main__":
