@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny" width="100%" height="100%" viewBox="0 0 400 600" preserveAspectRatio="xMinYMin meet">
+<g transform="scale(1.03 1) translate(-5.8252427184466065 0)">
+<path fill="#f2d6cb" stroke="#000" stroke-width="6" d="M5 600s-5-60 35-70c0 0 40 0 90-30l70-200 70 200c50 30 90 30 90 30 40 10 35 70 35 70"/>
+</g>
+<g transform="scale(1.03 1) translate(-5.825242718446607 0)">
+<path fill="#F00BA1" stroke="#000" stroke-width="6" d="M80 610s10-30 10-90l20-10s10 80 90 80 90-80 90-80l20 10c0 60 10 90 10 90z"/><path fill="#F00BA2" d="M85 575v25h230v-25h-65s-20 15-50 15-50-15-50-15z"/><path fill="none" stroke="#000" stroke-width="16" d="M90 520c0 60-10 90-10 90m230-90c0 60 10 90 10 90M110 510s10 80 90 80 90-80 90-80"/><path fill="none" stroke="#F00BA1" stroke-width="12" d="M90 520c0 60-10 90-10 90m230-90c0 60 10 90 10 90M110 510s10 80 90 80 90-80 90-80"/><path fill="none" stroke="#F00BA3" stroke-width="6" d="M90 520c0 60-10 90-10 90m230-90c0 60 10 90 10 90M110 510s10 80 90 80 90-80 90-80"/>
+</g>
+<g transform="translate(33.53553390593274 291.01362954285077) scale(0.69 0.69) translate(9.643455781392541 15.269238901038063) translate(6.991067811865474 -2.979591836734694)">
+<path fill="#f2d6cb" stroke="#000" stroke-width="6" d="M40 14S10-1 5 4s0 30 5 40-5 25 30 20z"/>
+</g>
+<g transform="translate(323.53553390593277 291.01362954285077) scale(-0.69 0.69) translate(-52.572387969527064 15.269238901038063) translate(6.991067811865474 -2.979591836734694)">
+<path fill="#f2d6cb" stroke="#000" stroke-width="6" d="M40 14S10-1 5 4s0 30 5 40-5 25 30 20z"/>
+</g>
+<g transform="scale(0.936 1) translate(13.675213675213664 0)">
+<path fill="#f2d6cb" stroke="#000" stroke-width="6" d="M200 100c100 0 150 60 150 200 0 0-20 105-20 135s-60 45-80 55-10 15-50 5c-40 10-30 5-50-5s-80-25-80-55-20-135-20-135c0-140 50-200 150-200Z"/><path fill="rgba(0,0,0,0)" d="M60 300H50c0-140 50-200 150-200s150 60 150 200h-10v-10c0-5-10-20-15-25s-5-55-15-65c-40-40-60 0-110 0s-70-40-110 0c-10 10-10 60-15 65s-15 20-15 25z"/><path fill="rgba(0,0,0,0)" d="M200 410c30 0 50 10 50 10 30 0 90-15 90-120h10s-20 105-20 135-60 45-80 55-10 15-50 5c-40 10-30 5-50-5s-80-25-80-55-20-135-20-135h10c0 105 60 120 90 120 0 0 20-10 50-10"/>
+</g>
+<g transform="translate(140.5 420.5) scale(1.23 1.23) translate(-1.776422764227642 -2.7113821138211383)">
+<path fill="none" stroke="#000" stroke-width="2" d="M17 2 2 12l5 15"/>
+</g>
+<g transform="translate(240.5 420.5) scale(-1.23 1.23) translate(-17.223577235772357 -2.7113821138211383)">
+<path fill="none" stroke="#000" stroke-width="2" d="M17 2 2 12l5 15"/>
+</g>
+<g transform="translate(-125 -25) rotate(-3 265 335)">
+<path d="M265 360c-13.8 0-25-11.2-25-25s11.2-25 25-25 25 11.2 25 25-11.2 25-25 25" style="fill:none;stroke:#000;stroke-width:5;stroke-linecap:round;stroke-linejoin:round"/><path d="M265 360c-13.8 0-25-11.2-25-25v-5h50v5c0 13.8-11.2 25-25 25" style="fill:#fff;stroke:#000;stroke-width:5;stroke-linecap:round;stroke-linejoin:round"/><path d="M265 330c-10 0-10 15 0 15s10-15 0-15" style="stroke:#000;stroke-width:4;stroke-linecap:round;stroke-linejoin:round"/>
+</g>
+<g transform="translate(-5 -25) rotate(3 265 335) scale(-1 1) translate(-530 0)">
+<path d="M265 360c-13.8 0-25-11.2-25-25s11.2-25 25-25 25 11.2 25 25-11.2 25-25 25" style="fill:none;stroke:#000;stroke-width:5;stroke-linecap:round;stroke-linejoin:round"/><path d="M265 360c-13.8 0-25-11.2-25-25v-5h50v5c0 13.8-11.2 25-25 25" style="fill:#fff;stroke:#000;stroke-width:5;stroke-linecap:round;stroke-linejoin:round"/><path d="M265 330c-10 0-10 15 0 15s10-15 0-15" style="stroke:#000;stroke-width:4;stroke-linecap:round;stroke-linejoin:round"/>
+</g>
+<g transform="translate(101.88888888888889 255.625) rotate(6 38.111111111111114 14.375)">
+<path fill="#5A3825" stroke="#000" d="M71 25c8-8 0-16 0-16S43 1 35 1C25 1 7 5 7 5s-12 8 0 20c16 8 16-4 36-4s24 8 28 4Z"/>
+</g>
+<g transform="translate(221.88888888888889 255.625) rotate(-6 38.111111111111114 14.375) scale(-1 1) translate(-76.22222222222223 0)">
+<path fill="#5A3825" stroke="#000" d="M71 25c8-8 0-16 0-16S43 1 35 1C25 1 7 5 7 5s-12 8 0 20c16 8 16-4 36-4s24 8 28 4Z"/>
+</g>
+<g transform="translate(-0.125 48.766108367626885) scale(-1 1) translate(-400.25 0)">
+<path d="M168 384s9-13.77 32-14.03c17.4-.2 32 13.2 32 13.2s-4.29 28.26-32 28.83c-27.29.56-32-28-32-28" style="opacity:.05;mix-blend-mode:multiply;fill:#501414"/><path d="M168 384c12-4 48-4 64 0-8 8-10 16-32 16-20 0-24-8-32-16Z" style="fill:#000;stroke:#000"/><path d="M168 384c14.08-5.73 53.75-3.73 64.25.6-20 4.67-30.5 2-30.5 2l.17-5.17-4.67-.33.17 5.17S184 388 168 384m4.42 6.6s21.58 3.17 27.58 3.17 26.92-3 26.92-3S216 400 200 400c-12 0-27.58-9.4-27.58-9.4" style="fill:#fff"/><path d="M168 384c12-4 48-4 64 0-8 8-10 16-32 16-20 0-24-8-32-16Zm16 24c12 6 20 6 32 0" style="fill:none;stroke:#000;stroke-width:4"/>
+</g>
+<g transform="translate(150.27785841680208 317.5) scale(-1.15 1.15) translate(-92.95878643815261 -6.847826086956519)">
+<path fill="#f2d6cb" stroke="#000" stroke-width="5" d="M36.03 47c-19.25.25-26.57 32.37-4.37 27.13 9-2.13 8.25 4.12 18.12 4.37 9.5.24 5.75-6.12 16.38-3.25 22.01 5.96 18.75-28-.21-28.02M50 55.6S51.25 45 51.25 35 50 5 50 5"/><path d="M40 95h20v5H40z" style="fill:none"/>
+</g>
+<g transform="scale(0.936 1) translate(13.675213675213664 0)">
+<defs><linearGradient id="a" x1="200" x2="200" y1="100" y2="310" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="rgba(0,0,0,.25)"/><stop offset="1" stop-color="rgba(0,0,0,0)"/></linearGradient></defs><path d="M60 310H50v-10c0-140 50-200 150-200s150 60 150 200v10h-10v-20c0-5-10-20-15-25s-5-55-15-65c-40-40-60 0-110 0s-70-40-110 0c-10 10-10 60-15 65s-15 20-15 25z" style="fill:url(#a);stroke:none"/><path fill="#5A3825" stroke="#000" stroke-width="4" d="M200 95c120 0 140 90 140 115-20 0-20 5-25 0s-15-15-50-15c-15 0-40 5-65 5s-50-5-65-5c-35 0-45 10-50 15s-5 0-25 0c0-25 25-115 140-115Z"/>
+</g>
+<g transform="scale(0.936 1) translate(13.675213675213664 0)">
+<g stroke="#000"><path fill="#F00BA1" stroke-width="4" d="M350 280c-10 0-30-50-150-50S60 280 50 280c-10-10-10-40 0-50 0 0 30-50 150-50s150 50 150 50c10 10 10 40 0 50Z"/><path fill="#F00BA2" d="M45 260v-10s35-50 155-50 155 50 155 50v10c-5 0-35-50-155-50S50 260 45 260Z"/></g>
+</g>
+</svg>

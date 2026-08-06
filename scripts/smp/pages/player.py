@@ -48,7 +48,6 @@ from ..core import (
     player_url,
     playoff_stats_since,
     plus_minus_class,
-    RATING_POOL_SIZE,
     rating_delta_html,
     rating_percentile_ramps,
     rating_skills,
@@ -132,13 +131,21 @@ _RAMP_CACHE: dict[int, tuple[dict[str, Any], int, dict[str, list[float]]]] = {}
 
 
 def _percentile_ramps(data: dict[str, Any] | None, season: int) -> dict[str, list[float]]:
-    """Rating ramps over the league's top RATING_POOL_SIZE players by overall."""
+    """Rating ramps over the rostered players -- everyone on a team (tid >= 0).
+
+    Not active_players(): most of that pool is the unsigned free-agent wire, so its
+    best 120 would be an all-star cut nobody ever plays against. Free agents and
+    draft prospects still get chips on their own pages -- ranked against this pool,
+    which is exactly what "how good is this prospect?" means.
+    """
     if not data:
         return {}
     cached = _RAMP_CACHE.get(id(data))
     if cached is None or cached[0] is not data or cached[1] != season:
         _RAMP_CACHE.clear()  # one export per build; don't hoard stale ones
-        cached = (data, season, rating_percentile_ramps(active_players(data), season))
+        rostered = [p for p in active_players(data)
+                    if safe_int(p.get("tid"), FREE_AGENT_TID) >= 0]
+        cached = (data, season, rating_percentile_ramps(rostered, season))
         _RAMP_CACHE[id(data)] = cached
     return cached[2]
 
@@ -466,23 +473,24 @@ def _pct_badge(key: str, label: str, rating: dict[str, Any], ramps: dict[str, li
     """Percentile chip for one rating, ranked against the reference pool.
 
     A rating in isolation says nothing -- 60 passing is elite for a center and ordinary
-    for a point guard's league -- so every number gets its rank against the same 120
-    players, tinted on the same red-to-green ramp the tables use.
+    for a point guard's league -- so every number gets its rank against the same
+    rostered players, tinted on the same red-to-green ramp the tables use. The title
+    quotes the pool it actually ranked, not a constant, so it can never overstate it.
     """
-    pct = pct_rank(rating.get(key), ramps.get(key, []))
+    ramp = ramps.get(key, [])
+    pct = pct_rank(rating.get(key), ramp)
     if pct is None:
         return ""
     shown = max(1, min(99, round(pct)))
-    style = heat_style_pct(rating.get(key), ramps.get(key, []))
-    return (f'<span class="rating-pct" style="{style}" '
-            f'title="{esc(label)}: {esc(ordinal(shown))} percentile of the top '
-            f'{RATING_POOL_SIZE} players">{shown}</span>')
+    return (f'<span class="rating-pct" style="{heat_style_pct(rating.get(key), ramp)}" '
+            f'title="{esc(label)}: {esc(ordinal(shown))} percentile of the '
+            f'{len(ramp)} rostered players">{shown}</span>')
 
 
 def player_ratings_html(player: dict[str, Any], season: int,
                         ramps: dict[str, list[float]] | None = None) -> str:
-    """Current-ratings card: Overall/Potential topline plus the 15 subratings,
-    each with a green/red delta vs last season and a percentile vs the top 120."""
+    """Current-ratings card: Overall/Potential topline plus the 15 subratings, each
+    with a green/red delta vs last season and a percentile vs the rostered players."""
     rating = latest_rating(player, season)
     ramps = ramps or {}
     rating_groups_html = []
@@ -503,8 +511,8 @@ def player_ratings_html(player: dict[str, Any], season: int,
         """)
 
     note = "green/red = vs last season"
-    if ramps:
-        note += f" · chip = percentile of the top {RATING_POOL_SIZE}"
+    if ramps.get("ovr"):
+        note += f" · chip = percentile of the {len(ramps['ovr'])} rostered players"
     return f"""
     <section class="card ratings-current">
       <div class="section-title-row"><h2>Current Ratings</h2><span class="muted small-copy">{esc(note)}</span></div>

@@ -85,6 +85,10 @@ from ..identity import crest_svg, monogram_svg, team_css_vars
 
 from ..portraits import portrait_html
 
+# Cards in the Top of the Market strip. Kept to one row -- .fa-card-strip lays out
+# exactly this many columns, so changing it here means changing it in league.css too.
+TOP_MARKET_CARDS = 8
+
 
 # ---------------------------------------------------------------------------
 # Shared league-page helpers: ordinals, led-league gold, honors, pennants
@@ -445,7 +449,7 @@ def render_free_agency_page(players: list[dict[str, Any]], teams: list[dict[str,
     rows = [free_agent_row(p, season, "", rating_ranges, show_bid=show_bids) for p in sorted_players]
 
     fa_cards = []
-    for rank, p in enumerate(sorted_players[:10], 1):
+    for rank, p in enumerate(sorted_players[:TOP_MARKET_CARDS], 1):
         rating = latest_rating(p, season)
         meta_bits = [rating.get("pos") or "—", f"{age(p, season)} yr",
                      f"{rating.get('ovr', '—')} ovr / {rating.get('pot', '—')} pot"]
@@ -1109,12 +1113,17 @@ def past_season_leaders_html(data: dict[str, Any], season: int, all_players_by_p
     return f'<div class="leaders-inline">{"".join(bits)}</div>'
 
 
-def prospect_row(player: dict[str, Any], season: int, rating_ranges: dict[str, tuple[float, float]], root: str = "") -> str:
+def prospect_row(player: dict[str, Any], season: int, draft_year: int, rating_ranges: dict[str, tuple[float, float]], root: str = "") -> str:
+    # Age is the prospect's age in the class he comes out in, not today's. The export
+    # stamps a future prospect's ratings and height at his draft season, so an age
+    # measured from `season` contradicts every other cell on the row -- the 2013 class
+    # off the 2004 export lists ten-year-olds standing 6'6" with NBA overalls.
+    born = (player.get("born") or {}).get("year")
     rating = latest_rating(player, season + 1) or latest_rating(player)
     cells = [
         td(f'<a class="player-link" href="{player_url(player, root)}">{esc(player_name(player))}</a>', sort=player_name(player), cls="name-cell"),
         td(esc(rating.get("pos", "—")), sort=rating.get("pos", "")),
-        td(age(player, season), sort=(season - (player.get("born") or {}).get("year", season) if isinstance((player.get("born") or {}).get("year"), int) else None)),
+        td(age(player, draft_year), sort=(draft_year - born if isinstance(born, int) else None)),
         td(fmt_height(player.get("hgt")), sort=player.get("hgt")),
         td(esc(rating.get("ovr", "—")), sort=rating.get("ovr")),
         td(esc(rating.get("pot", "—")), sort=rating.get("pot"), style=heat_style(rating.get("pot"), *rating_ranges.get("pot", (0, 0)), 1)),
@@ -1227,17 +1236,32 @@ def draft_class_panel(data: dict[str, Any], teams: list[dict[str, Any]], season:
     headers: list = ["Name", "Pos", "Age", "Ht", "Ovr", "Pot"]
     for key, label in TEAM_RATING_RANK_KEYS:
         headers.append((label, "group-start" if key in RATING_GROUP_STARTS else ""))
-    rows = [prospect_row(p, season, rating_ranges) for p in sorted_prospects]
+    rows = [prospect_row(p, season, draft_year, rating_ranges) for p in sorted_prospects]
     table_id = f"prospects-{draft_year}"
     hidden_attr = " hidden" if hidden else ""
-    return f"""
-    <div id="draft-panel-{draft_year}" role="tabpanel" aria-labelledby="draft-tab-{draft_year}" data-draft-panel="{draft_year}"{hidden_attr}>
+
+    # Both overview cards slot prospects into picks derived from the current standings,
+    # which only describe how *this* season finishes. The export carries classes out to
+    # season + 9; a 2013 lottery ordered by a 2004 table is invented, not projected, so
+    # the far classes are the prospect list and an honest note about why.
+    overview = ""
+    note = ""
+    if draft_year <= season:
+        overview = f"""
       <div class="draft-overview-row">
         {projected_lottery_html(data, teams, season, draft_year)}
         {mock_draft_card(data, teams, season, draft_year, class_prospects)}
-      </div>
+      </div>"""
+    else:
+        away = draft_year - season
+        note = (f'<span class="muted small-copy">'
+                f'{"next year’s class" if away == 1 else f"{away} drafts out"}'
+                f' · no standings yet to slot a board from</span>')
+    return f"""
+    <div id="draft-panel-{draft_year}" role="tabpanel" aria-labelledby="draft-tab-{draft_year}" data-draft-panel="{draft_year}"{hidden_attr}>{overview}
       <section class="card">
-        <div class="section-title-row"><h2>Class of {draft_year}</h2><span class="count-pill">{len(sorted_prospects)} prospects</span></div>
+        <div class="section-title-row draft-class-title-row"><h2>Class of {draft_year}</h2>
+          <span class="draft-class-meta">{note}<span class="count-pill">{len(sorted_prospects)} prospects</span></span></div>
         <div class="toolbar">
           <input class="table-search" data-table-filter="{table_id}" placeholder="Filter prospects…" aria-label="Filter prospects">
         </div>
@@ -1419,11 +1443,15 @@ def render_draft_page(data: dict[str, Any], teams: list[dict[str, Any]], season:
         draft_class_panel(data, teams, season, year, by_year.get(year, []), hidden=(i != 0))
         for i, year in enumerate(draft_years)
     )
+    span = str(draft_years[0]) if len(draft_years) == 1 else f"{draft_years[0]}–{draft_years[-1]}"
+    hero_note = f"{len(draft_years)} classes, {span} · each sorted by potential"
+    if draft_years[-1] > season:
+        hero_note += f" · pick slots come from current standings, so the board is drawn for the {season} draft only"
     body = f"""
     <section class="page-hero">
       <div>
         <h1>Draft</h1>
-        <p class="muted">Upcoming classes sorted by potential · pick slots from current standings</p>
+        <p class="muted">{esc(hero_note)}</p>
       </div>
       <div class="view-toggle draft-tabs" role="tablist" aria-label="Draft classes" data-draft-tabs>{tabs}</div>
     </section>

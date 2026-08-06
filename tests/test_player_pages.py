@@ -349,15 +349,14 @@ class TestContractSection(unittest.TestCase):
 
 
 class TestRatingPercentiles(unittest.TestCase):
-    """Every rating is ranked against the same reference pool: the top 120 by ovr."""
+    """Every rating is ranked against the same reference pool: the rostered players."""
 
     @staticmethod
-    def _pool(n=200):
-        # ovr/pot climb with pid, so the pool's top 120 is pids 80..199 and the
-        # percentile of any value is predictable.
+    def _pool(n=120, tid=0):
+        # ovr/pot climb with pid, so the percentile of any value is predictable.
         return [
             {
-                "pid": pid, "firstName": "P", "lastName": str(pid), "tid": -1,
+                "pid": pid, "firstName": "P", "lastName": str(pid), "tid": tid,
                 "retiredYear": None, "born": {"year": 2005},
                 "ratings": [{"season": 2031, "pos": "SG", "ovr": pid % 100,
                              "pot": pid % 100, "drb": pid % 100}],
@@ -366,16 +365,41 @@ class TestRatingPercentiles(unittest.TestCase):
             for pid in range(n)
         ]
 
-    def test_ramps_cover_exactly_the_reference_pool(self):
-        from smp.core import RATING_POOL_SIZE, rating_percentile_ramps
-        ramps = rating_percentile_ramps(self._pool(), 2031)
-        self.assertEqual(len(ramps["ovr"]), RATING_POOL_SIZE)
+    def test_ramps_rank_every_player_handed_in(self):
+        # No hidden "best N" cut: the caller owns the pool, so the ramp IS the pool.
+        from smp.core import rating_percentile_ramps
+        for size in (40, 200):
+            ramps = rating_percentile_ramps(self._pool(size), 2031)
+            self.assertEqual(len(ramps["ovr"]), size)
         self.assertIn("drb", ramps)
 
-    def test_pool_smaller_than_120_uses_everyone(self):
+    def test_reference_pool_is_the_rostered_players_not_the_free_agent_pile(self):
+        # The export also carries hundreds of unsigned free agents and draft
+        # prospects; ranking against the best of those would compare everyone to an
+        # all-star cut that never takes the floor. Length can't tell the two pools
+        # apart -- a top-120 cut is also 120 long -- so pin the values instead: the
+        # rostered ramp reaches down to the league's worst man, a cut starts near
+        # the ceiling.
+        from smp.core import RATING_POOL_SIZE
+        rostered = self._pool(RATING_POOL_SIZE)
+        data = {"players": rostered
+                + [dict(p, tid=-1) for p in self._pool(300)]
+                + [dict(p, tid=-2) for p in self._pool(400)]}
+        ramps = pp._percentile_ramps(data, 2031)
+        self.assertEqual(ramps["ovr"],
+                         sorted(float(p["ratings"][0]["ovr"]) for p in rostered))
+
+    def test_unrostered_players_still_get_chips_against_the_league(self):
+        # A 41-overall prospect landing in the league's bottom percentile is true and
+        # useful, so free-agent and prospect pages rank against the pool too.
         from smp.core import rating_percentile_ramps
-        ramps = rating_percentile_ramps(self._pool(40), 2031)
-        self.assertEqual(len(ramps["ovr"]), 40)
+        ramps = rating_percentile_ramps(self._pool(), 2031)
+        for tid in (-1, -2):
+            prospect = _player(24, tid=tid,
+                               ratings=[{"season": 2031, "pos": "SG", "ovr": 41, "pot": 60, "drb": 41}])
+            html = pp.player_ratings_html(prospect, 2031, ramps)
+            self.assertIn("rating-pct", html)
+            self.assertIn("rostered players", html)
 
     def test_pct_rank_is_the_tied_run_midpoint(self):
         from smp.core import pct_rank
@@ -391,8 +415,8 @@ class TestRatingPercentiles(unittest.TestCase):
         player = _player(21, ratings=[{"season": 2031, "pos": "SG", "ovr": 90, "pot": 92, "drb": 90}])
         html = pp.player_ratings_html(player, 2031, ramps)
         self.assertIn("rating-pct", html)
-        self.assertIn("percentile of the top 120 players", html)
-        self.assertIn("chip = percentile of the top 120", html)
+        self.assertIn("percentile of the 120 rostered players", html)
+        self.assertIn("chip = percentile of the 120 rostered players", html)
         # One chip per rating both the player and the reference pool carry: this
         # synthetic pool rates ovr/pot/drb, so the other 14 rows stay bare.
         self.assertEqual(html.count('class="rating-pct"'), 3)

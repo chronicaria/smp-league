@@ -226,9 +226,11 @@ class TestFreeAgencyPage(_ExportCase):
         from smp.core import free_agents
         cls.html = lp.render_free_agency_page(free_agents(cls.data), cls.teams, cls.season, 2026)
 
-    def test_top_ten_card_strip(self):
+    def test_top_of_the_market_card_strip(self):
+        # One row exactly: the count is coupled to the 8-column CSS track, so the
+        # assertion reads the constant rather than restating the number.
         self.assertIn("fa-card-strip", self.html)
-        self.assertEqual(self.html.count('class="fa-card"'), 10)
+        self.assertEqual(self.html.count('class="fa-card"'), lp.TOP_MARKET_CARDS)
         self.assertIn("fa-card-ask", self.html)
         self.assertIn("Asking price", self.html)
 

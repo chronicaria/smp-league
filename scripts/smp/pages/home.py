@@ -11,6 +11,7 @@ from ..core import (
     FREE_AGENT_TID,
     SITE_META,
     active_teams_for_season,
+    age,
     clinch_html,
     completed_game_items,
     compose_event_html,
@@ -76,9 +77,11 @@ from ..derived import fantasy_pts
 
 from ..finance import compute_league_finances, fmt_money_pm
 
-from ..identity import team_chart_color
+from ..identity import team_chart_color, team_css_vars
 
 from ..ledger import load_odds_history
+
+from ..portraits import portrait_html
 
 from ..simmodel import league_sim, playoff_clinch_marks
 
@@ -96,6 +99,24 @@ def _pct1(pct: float) -> str:
     if pct < 0.05:
         return "&lt;0.1"
     return fmt_number(pct, 1)
+
+
+def _pct0(pct: float) -> str:
+    """_pct1 at whole-percent precision, for the seed-distribution heat cells.
+
+    Ten columns of two-digit numbers read as a distribution; ten columns of
+    "31.4" read as a spreadsheet. Same honesty rules as _pct1: a genuine zero
+    is a dash, and a trace probability floors at "<1" rather than rounding down
+    to a bare "0" that would claim the seed is impossible.
+
+    The trace cutoff is inclusive because "%.0f" rounds half to even: an exact
+    0.5 — 50 hits in the 10,000-sim run, entirely reachable — formats as "0".
+    """
+    if pct == 0:
+        return "—"
+    if pct <= 0.5:
+        return "&lt;1"
+    return fmt_number(pct, 0)
 
 
 def _odds_pct(pct: float) -> str:
@@ -165,10 +186,10 @@ def playoff_odds_card(data: dict[str, Any], teams: list[dict[str, Any]], season:
         ]
         for seed_index in range(n_seeds):
             pct = 100 * o["seeds"][seed_index]
-            # One-decimal like every other percentage; the compact "31.4"
-            # form (no % sign) keeps the ten heat cells tight.
+            # Whole percents (no % sign) keep the ten heat cells tight; the
+            # sort attribute and the tint both keep the full-precision value.
             cls = "seed-cell seed-cut" if seed_index == 4 else "seed-cell"
-            cells.append(td(_pct1(pct), sort=pct, style=seed_cell_style(pct), cls=cls))
+            cells.append(td(_pct0(pct), sort=pct, style=seed_cell_style(pct), cls=cls))
         rows.append(f'<tr data-tid="{tid}">{"".join(cells)}</tr>')
     headers = ["Team", "Proj W-L", "PO%", "Finals%", "Title%"] + [str(i) for i in range(1, n_seeds + 1)]
     series = _series_phrase(data, season)
@@ -982,6 +1003,107 @@ def home_finances_table(data: dict[str, Any], teams: list[dict[str, Any]], playe
     """
 
 
+ROSTER_GRID_STAT_KEYS = [("pts", "PTS"), ("trb", "REB"), ("ast", "AST"), ("stl", "STL"), ("blk", "BLK")]
+
+
+def _grid_stat_line(player: dict[str, Any], season: int, start_season: int) -> str:
+    """The depth chart's per-game line (PTS/REB/AST/STL/BLK) at grid density,
+    read from the player's latest season with games played (0-GP rows skipped).
+
+    Before the first tip-off every value is an em-dash for all 120 players, so
+    the whole line is dimmed as a unit: one quiet "nothing here yet" block per
+    card instead of five loud dashes competing with the name above them.
+    """
+    played = {
+        s["season"] for s in player.get("stats") or []
+        if isinstance(s, dict) and not s.get("playoffs")
+        and isinstance(s.get("season"), int) and start_season <= s["season"] <= season
+        and stat_gp(s) > 0
+    }
+    stat = season_regular_stat(player, max(played)) if played else {}
+    gp = stat_gp(stat)
+    bits = []
+    for key, label in ROSTER_GRID_STAT_KEYS:
+        if gp > 0:
+            raw = (safe_float(stat.get("orb")) + safe_float(stat.get("drb"))) if key == "trb" else safe_float(stat.get(key))
+            value = fmt_number(raw / gp, 1)
+        else:
+            value = "—"
+        bits.append(f'<span class="hrg-stat"><strong>{value}</strong><small>{label}</small></span>')
+    if gp > 0:
+        return f'<span class="hrg-line">{"".join(bits)}</span>'
+    return f'<span class="hrg-line hrg-line--empty" title="No games played yet">{"".join(bits)}</span>'
+
+
+def _roster_grid_cell(player: dict[str, Any], season: int, start_season: int) -> str:
+    """One roster-grid cell, built like a depth card: portrait, then position and
+    age over the name and the per-game line."""
+    rating = latest_rating(player, season)
+    years = age(player, season)
+    age_bit = f'<span class="hrg-age" title="Age">{esc(years)}y</span>' if years != "—" else ""
+    injury = player.get("injury") or {}
+    cross = (f' <span class="injured" title="{esc(injury.get("type", ""))}">✚</span>'
+             if injury.get("type") and injury.get("type") != "Healthy" else "")
+    return (
+        f'<a class="hrg-cell" href="{player_url(player, "")}">'
+        f'<span class="hrg-face">{portrait_html(player, "hrg-portrait", "", size=44)}</span>'
+        '<span class="hrg-id">'
+        f'<span class="hrg-meta"><span class="hrg-pos">{esc(rating.get("pos", "—"))}</span>{age_bit}</span>'
+        f'<span class="hrg-name">{esc(player_name(player))}{cross}</span>'
+        "</span>"
+        f"{_grid_stat_line(player, season, start_season)}"
+        "</a>"
+    )
+
+
+def roster_grid_card(players: list[dict[str, Any]], teams: list[dict[str, Any]],
+                     season: int, start_season: int) -> str:
+    """Every rostered player in the league on one screen: a row per team, a
+    depth-chart-style card per player, in the roster order the site uses
+    everywhere else (overall descending, then name).
+
+    Twelve cards across is wider than the page, so the grid scrolls inside its
+    own container with the team column pinned — the alternative, wrapping each
+    team onto several lines, loses the "one row is one roster" reading that
+    makes the card worth having.
+    """
+    palette = team_palette_by_tid(teams)
+    by_tid: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for player in players:
+        tid = safe_int(player.get("tid"), -9)
+        if tid >= 0:
+            by_tid[tid].append(player)
+    rows = []
+    shown = 0
+    for team in sorted(active_teams_for_season(teams, season), key=team_sort_key):
+        tid = safe_int(team.get("tid"))
+        roster = sorted(by_tid.get(tid, []),
+                        key=lambda p: (-safe_int(latest_rating(p, season).get("ovr")), player_name(p)))
+        if not roster:
+            continue
+        shown += len(roster)
+        cells = "".join(_roster_grid_cell(player, season, start_season) for player in roster)
+        rows.append(
+            f'<div class="hrg-row" style="{team_css_vars(tid)}">'
+            f'<div class="hrg-team">'
+            f'<span class="hrg-team-name">{team_dot(tid, palette)}'
+            f'<a class="player-link" href="teams/{team_slug(team)}.html">{esc(team_full_name(team))}</a></span>'
+            f'<span class="hrg-count muted">{len(roster)} {"player" if len(roster) == 1 else "players"}</span></div>'
+            f'<div class="hrg-cells">{cells}</div>'
+            "</div>"
+        )
+    if not rows:
+        return ""
+    detail = ("Every player under contract, ordered by overall within each team. "
+              "Per-game figures come from each player's latest season with games played.")
+    return f"""
+    <section class="card home-section">
+      <div class="section-title-row"><h2>League Rosters</h2><span class="muted small-copy" title="{esc(detail)}">all {shown} rostered players · scroll sideways</span></div>
+      <div class="hrg-scroll">{''.join(rows)}</div>
+    </section>
+    """
+
+
 # ---------------------------------------------------------------------------
 # Phase-aware composition (PLAN D32) + new home cards (B11/B14/B16a)
 # ---------------------------------------------------------------------------
@@ -1260,8 +1382,11 @@ def _exact_team_stat(team: dict[str, Any], season: int) -> dict[str, Any]:
     return {}
 
 
-# Short x-tick names per BBGM phase for odds-river snapshots.
-_RIVER_PHASE_TICKS = {0: "Pre", 1: "RS", 2: "RS", 3: "PO", 4: "Off", 5: "Draft", 6: "Off", 7: "Re-sign", 8: "FA"}
+# Short x-tick names per BBGM phase for odds-river snapshots. Phase 0 shares the
+# "RS" tick with phases 1-2: the preseason snapshot is the season's opening odds,
+# so it belongs at the head of the regular-season run ("RS 1") rather than sitting
+# outside it as a "Pre" tick. The long tooltip name below still calls it what it is.
+_RIVER_PHASE_TICKS = {0: "RS", 1: "RS", 2: "RS", 3: "PO", 4: "Off", 5: "Draft", 6: "Off", 7: "Re-sign", 8: "FA"}
 _RIVER_PHASE_NAMES = {0: "Preseason", 1: "Regular season", 2: "Regular season", 3: "Playoffs", 4: "Offseason",
                       5: "Draft", 6: "Offseason", 7: "Re-signing", 8: "Free agency"}
 
@@ -1514,6 +1639,7 @@ def render_home_page(data: dict[str, Any], teams: list[dict[str, Any]], players:
             ],
         )}
         {home_finances_table(data, teams, players, season)}
+        {roster_grid_card(players, teams, season, start_season)}
         """
     elif kind == "playoffs":
         body = f"""
@@ -1536,6 +1662,7 @@ def render_home_page(data: dict[str, Any], teams: list[dict[str, Any]], players:
         {team_stats_table(chart_teams, season)}
         {awards_voting_table(data, players, teams, season)}
         {home_finances_table(data, teams, players, season)}
+        {roster_grid_card(players, teams, season, start_season)}
         """
     elif kind == "offseason":
         body = f"""
@@ -1556,6 +1683,7 @@ def render_home_page(data: dict[str, Any], teams: list[dict[str, Any]], players:
         {team_stats_table(chart_teams, season)}
         {awards_voting_table(data, players, teams, season)}
         {home_finances_table(data, teams, players, season)}
+        {roster_grid_card(players, teams, season, start_season)}
         """
     else:
         body = f"""
@@ -1579,5 +1707,6 @@ def render_home_page(data: dict[str, Any], teams: list[dict[str, Any]], players:
         {team_stats_table(chart_teams, season)}
         {awards_voting_table(data, players, teams, season)}
         {home_finances_table(data, teams, players, season)}
+        {roster_grid_card(players, teams, season, start_season)}
         """
     return page_html("Home", body, teams, root="", active="home")

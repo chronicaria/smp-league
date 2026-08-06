@@ -29,6 +29,7 @@ teams/              Team pages
 games/              Box score pages (none until games are played)
 assets/             League CSS, JS, and search index
 league-data/        Current league's JSON exports + odds_history.json
+league-data/draft_classes/  Real 2004-2013 draft classes, one file per year
 league-data/smp1/   Archived league: SMP I, 2026-2031
 scripts/            League site generator
 scripts/portraits/  Background-stripped player photos (committed, see below)
@@ -46,6 +47,29 @@ Basketball GM's own Undrafted screen, exported as-is, one row per player in boar
 order. Only the `Name` column is read. Re-export it after picks are made to keep
 the page showing what the room is looking at; without the file the pool falls back
 to sorting by overall, which ranks a 28-year-old 73 above LeBron.
+
+## Draft classes
+
+The Draft page shows ten classes, 2004 through 2013 — the real ones, exported one
+file per year from Basketball GM's Draft Class screen into
+`league-data/draft_classes/<year>.json`. A league export ships with randomly
+generated prospects instead, so they are swapped out on the way in:
+
+```sh
+python3 scripts/import_draft_classes.py league-data/2004_preseason.json
+```
+
+That drops every `tid == -2` player already in the export and writes the ten real
+classes in their place, renumbering `pid` above the export's own high-water mark so
+nothing collides. The site build never reads `draft_classes/` — it reads the export —
+so re-run the import after a fresh export or a changed class file, and commit the result.
+
+Prospects carry Basketball GM face objects rather than photos, so re-run the face
+renderer after an import or they fall back to monogram roundels:
+
+```sh
+node scripts/faces/render.mjs
+```
 
 ## Portrait cutouts
 

@@ -2,16 +2,26 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://chronicaria.github.io/</loc></url>
   <url><loc>https://chronicaria.github.io/schedule.html</loc></url>
-  <url><loc>https://chronicaria.github.io/players/</loc></url>
+  <url><loc>https://chronicaria.github.io/players/index.html</loc></url>
+  <url><loc>https://chronicaria.github.io/league-draft.html</loc></url>
   <url><loc>https://chronicaria.github.io/free-agency.html</loc></url>
   <url><loc>https://chronicaria.github.io/draft.html</loc></url>
-  <url><loc>https://chronicaria.github.io/trade.html</loc></url>
-  <url><loc>https://chronicaria.github.io/compare.html</loc></url>
   <url><loc>https://chronicaria.github.io/history.html</loc></url>
   <url><loc>https://chronicaria.github.io/records.html</loc></url>
-  <url><loc>https://chronicaria.github.io/rivalries.html</loc></url>
   <url><loc>https://chronicaria.github.io/classics.html</loc></url>
   <url><loc>https://chronicaria.github.io/wrapped.html</loc></url>
+  <url><loc>https://chronicaria.github.io/trade.html</loc></url>
+  <url><loc>https://chronicaria.github.io/compare.html</loc></url>
   <url><loc>https://chronicaria.github.io/lineup.html</loc></url>
   <url><loc>https://chronicaria.github.io/simulator.html</loc></url>
+  <url><loc>https://chronicaria.github.io/teams/cambridge-platypuses-2.html</loc></url>
+  <url><loc>https://chronicaria.github.io/teams/durham-destroyers-3.html</loc></url>
+  <url><loc>https://chronicaria.github.io/teams/gooning-gooners-6.html</loc></url>
+  <url><loc>https://chronicaria.github.io/teams/ithaca-thunder-5.html</loc></url>
+  <url><loc>https://chronicaria.github.io/teams/manhattan-elephants-7.html</loc></url>
+  <url><loc>https://chronicaria.github.io/teams/queens-pigeons-9.html</loc></url>
+  <url><loc>https://chronicaria.github.io/teams/rochester-dragons-0.html</loc></url>
+  <url><loc>https://chronicaria.github.io/teams/stony-brook-stingrays-8.html</loc></url>
+  <url><loc>https://chronicaria.github.io/teams/toronto-jays-4.html</loc></url>
+  <url><loc>https://chronicaria.github.io/teams/waltham-bears-1.html</loc></url>
 </urlset>

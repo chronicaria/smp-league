@@ -1450,18 +1450,20 @@ def pct_ramp(values: Iterable[Any]) -> list[float]:
     return out
 
 
-# Player pages rank each rating against a fixed reference pool: the league's 120 best
-# players by overall -- 10 teams x 12 roster spots, i.e. everyone who will hold a job.
-# Before the draft that is the top of the board; once the league is stocked the same
-# number is the rostered 120, so the yardstick keeps its meaning without changing.
+# Player pages rank each rating against one fixed reference pool: the players actually
+# on a roster this season -- 10 teams x 12 spots, so 120 men hold a job. Free agents and
+# draft prospects are measured AGAINST that pool without being part of it, which is the
+# question their page asks: where would he sit in the league as it stands today?
 RATING_POOL_SIZE = 120
 
 
-def rating_percentile_ramps(players: Iterable[dict[str, Any]], season: int,
-                            size: int = RATING_POOL_SIZE) -> dict[str, list[float]]:
-    """``{rating key: pct_ramp}`` over the ``size`` highest-overall players."""
-    ranked = sorted(players, key=lambda p: -safe_int(latest_rating(p, season).get("ovr")))[:size]
-    ratings = [latest_rating(p, season) for p in ranked]
+def rating_percentile_ramps(players: Iterable[dict[str, Any]], season: int) -> dict[str, list[float]]:
+    """``{rating key: pct_ramp}`` over exactly the players handed in.
+
+    Nothing is truncated here: the caller owns the choice of pool, and a hidden "keep
+    the best N" cut would make every chip cite a rank against a pool no page names.
+    """
+    ratings = [latest_rating(p, season) for p in players]
     return {key: pct_ramp(r.get(key) for r in ratings)
             for key in ["ovr", "pot", *RATING_LABELS]}
 

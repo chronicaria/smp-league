@@ -84,8 +84,31 @@ a.rafters-flag:hover .rafters-pennant, a.rafters-flag:focus-visible .rafters-pen
 .sched-empty p { margin: 0; }
 .sched-empty p + p { margin-top: .3rem; }
 
-/* ---------- free-agency top-10 card strip ---------- */
-.fa-card-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .5rem; }
+/* ---------- top-of-the-market / top-of-the-board card strips ---------- */
+/* One row of eight -- league.TOP_MARKET_CARDS on free agency, draftroom.TOP_BOARD_CARDS
+   on the draft room -- so the divisor below is those counts and moves when they do.
+   Two things were wrong. Top of the Market asked for `auto-fill, minmax(150px, 1fr)`
+   while Python emitted ten cards, so the column count was whatever happened to fit
+   (nine at 1560px) and the leftovers dropped onto a second row at the left; and Top of
+   the Board's `repeat(8, minmax(0, 1fr))` kept all eight tracks alive even when there
+   were fewer cards, packing them into the first tracks with the whole remainder piled
+   on the right. Sizing each track as an exact eighth of the row fixes the first -- eight
+   cards span the card with nothing left over at either end -- and `auto-fit` plus
+   `justify-content` fixes the second: unfilled tracks collapse and what is left over
+   splits evenly into a gutter at each end instead of all landing on one side. */
+.fa-card-strip,
+.fa-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, calc((100% - 3.5rem) / 8)));
+  justify-content: center;
+  gap: .5rem;
+}
+/* Below the width where an eighth of the row is still a legible card, stop forcing
+   eight across and let as many as fit share the row. */
+@media (max-width: 1180px) {
+  .fa-card-strip,
+  .fa-card-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+}
 .fa-card {
   position: relative;
   display: flex;
@@ -129,19 +152,26 @@ a.rafters-flag:hover .rafters-pennant, a.rafters-flag:focus-visible .rafters-pen
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- draft page: ten class tabs ---------- */
+/* The year strip was three buttons; the export now carries a class for every season
+   out to season + 9. Ten of them are ~660px, which clears a desktop hero but not a
+   phone, and .view-toggle is a single bordered pill with overflow: hidden -- wrapping
+   would strand a second row of buttons with no top border and clip it besides. So the
+   pill scrolls sideways instead, and the buttons refuse to shrink their years to mush. */
+.draft-tabs { max-width: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.draft-tabs button { flex: 0 0 auto; }
+/* The prospect count and, for classes too far out to slot, the note saying so travel
+   together at the right of the "Class of ..." title instead of being flung apart by
+   space-between -- and drop onto their own line rather than crushing the title into a
+   word per line when note, count and title all want a phone's width at once. */
+.draft-class-title-row { flex-wrap: wrap; }
+.draft-class-meta { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .55rem; margin-left: auto; }
+
 /* ---------- league draft: the snake board ---------- */
 /* One cell per slot, tinted with the owning team's primary so a manager can find
    their own column at a glance. Cells stay legible when empty (pre-draft) and
    carry the player's name once the pick is in. */
-.dr-card-grid,
-.fa-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .5rem; }
-/* Top of the Board is one row of draftroom.TOP_BOARD_CARDS, not an auto-fill that
-   wraps a stray card onto a second line. Below the width where 8 still fit, fall
-   back to auto-fill rather than squeezing them to nothing. */
-.fa-card-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
-@media (max-width: 1180px) {
-  .fa-card-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-}
+.dr-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .5rem; }
 .dr-board { width: 100%; border-collapse: separate; border-spacing: 2px; }
 .dr-board th { font-size: .72rem; color: var(--muted); font-weight: 600; padding: .2rem .3rem; }
 .dr-board th.dr-round { text-align: right; white-space: nowrap; }

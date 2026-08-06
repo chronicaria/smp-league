@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny" width="100%" height="100%" viewBox="0 0 400 600" preserveAspectRatio="xMinYMin meet">
+<g transform="scale(1.03 1) translate(-5.895651127336921 0)">
+<path fill="#74453d" stroke="#000" stroke-width="6" d="M20 600s-5-60 40-70c15 0 45-15 90-35l50-195 50 195c45 20 75 35 90 35 45 10 45 70 45 70"/>
+</g>
+<g transform="scale(1.03 1) translate(-5.825242718446607 0)">
+<path fill="#F00BA1" stroke="#000" stroke-width="6" d="M80 610s10-30 10-90l20-10s10 80 90 80 90-80 90-80l20 10c0 60 10 90 10 90z"/><path fill="#F00BA2" d="M85 575v25h230v-25h-65s-20 15-50 15-50-15-50-15z"/><path fill="none" stroke="#000" stroke-width="16" d="M90 520c0 60-10 90-10 90m230-90c0 60 10 90 10 90M110 510s10 80 90 80 90-80 90-80"/><path fill="none" stroke="#F00BA1" stroke-width="12" d="M90 520c0 60-10 90-10 90m230-90c0 60 10 90 10 90M110 510s10 80 90 80 90-80 90-80"/><path fill="none" stroke="#F00BA3" stroke-width="6" d="M90 520c0 60-10 90-10 90m230-90c0 60 10 90 10 90M110 510s10 80 90 80 90-80 90-80"/>
+</g>
+<g transform="translate(32 290.6) scale(1.44 1.44) translate(-7.027777777777778 -10.511111111111113) translate(27.38 -3)">
+<path fill="#74453d" stroke="#000" stroke-width="6" d="M43 13S23 3 13 3 3 23 3 33s3 20 13 30 27-10 27-10z"/>
+</g>
+<g transform="translate(322 290.6) scale(-1.44 1.44) translate(-38.97222222222222 -10.511111111111113) translate(27.38 -3)">
+<path fill="#74453d" stroke="#000" stroke-width="6" d="M43 13S23 3 13 3 3 23 3 33s3 20 13 30 27-10 27-10z"/>
+</g>
+<g transform="scale(0.804 1) translate(48.75621890547262 0)">
+<path fill="#74453d" stroke="#000" stroke-width="6" d="M200 100c100 0 150 60 150 200 0 120-10 150-110 190 0 0-20 10-40 10s-40-10-40-10C60 450 50 420 50 300c0-140 50-200 150-200Z"/><path fill="rgba(0,0,0,0)" d="M60 300H50c0-140 50-200 150-200s150 60 150 200h-10v-10c0-5-10-20-15-25s-5-55-15-65c-40-40-60 0-110 0s-70-40-110 0c-10 10-10 60-15 65s-15 20-15 25z"/><path fill="rgba(0,0,0,0)" d="M200 410c30 0 50 10 50 10 30 0 90-15 90-120h10c0 120-10 150-110 190 0 0-20 10-40 10s-40-10-40-10C60 450 50 420 50 300h10c0 105 60 120 90 120 0 0 20-10 50-10"/>
+</g>
+<g transform="scale(0.804 1) translate(48.75621890547262 0)">
+<path fill="#272421" stroke="#000" d="m200 457.82 10 2.18s0 20 10 20 30-5 30 0c0 20-30 30-50 30s-50-10-50-30c0-5 20 0 30 0s10-20 10-20zM150 425c-5-5 25-20 35-20 5 0 10 5 15 5s10-5 15-5c10 0 40 15 35 20s-5-5-50-5-45 10-50 5Z"/>
+</g>
+<g transform="translate(104.75510204081633 287) rotate(4 35.24489795918368 23)">
+<path d="M67 35c0-4 6-32-24-32S3 15 3 23s12 20 24 20 40-4 40-8Z" style="fill:#fff;stroke:#000;stroke-width:5"/><path d="M39 29c-3.32 0-6-2.68-6-6s2.68-6 6-6 6 2.68 6 6-2.68 6-6 6Z" style="fill:#000;stroke:#000;stroke-width:5"/>
+</g>
+<g transform="translate(224.75510204081633 287) rotate(-4 35.24489795918368 23) scale(-1 1) translate(-70.48979591836736 0)">
+<path d="M67 35c0-4 6-32-24-32S3 15 3 23s12 20 24 20 40-4 40-8Z" style="fill:#fff;stroke:#000;stroke-width:5"/><path d="M39 29c-3.32 0-6-2.68-6-6s2.68-6 6-6 6 2.68 6 6-2.68 6-6 6Z" style="fill:#000;stroke:#000;stroke-width:5"/>
+</g>
+<g transform="translate(109 261.5) rotate(14 31 8.5)">
+<path fill="#272421" stroke="#000" d="M61 16V6L31 1 1 6v10l30-5z"/>
+</g>
+<g transform="translate(229 261.5) rotate(-14 31 8.5) scale(-1 1) translate(-62 0)">
+<path fill="#272421" stroke="#000" d="M61 16V6L31 1 1 6v10l30-5z"/>
+</g>
+<g transform="translate(169 424.5) scale(-1 1) translate(-62 0)">
+<path d="M11 8S4.33 28 31 28 51 8 51 8 41 4.37 31 4.37 11 8 11 8Zm50-5L51 8M1 3l10 5" style="fill:#fff;stroke:#000;stroke-width:5"/>
+</g>
+<g transform="translate(0 -20) scale(-0.7 0.7) translate(-485.7142857142857 167.14285714285717)">
+<path fill="#74453d" stroke="#000" stroke-width="5" d="m175 380 25 20 25-20"/>
+</g>
+<g transform="scale(-1 1) translate(-400 0) scale(0.804 1) translate(48.75621890547262 0)">
+<path fill="#272421" stroke="#000" stroke-width="4" d="M60 310H50v-10C50 110 40 90 60 90h280c20 0 10 20 10 210v10h-10v-20c0-5-10-20-15-25s-5-55-15-65-60 0-110 0-100-10-110 0-10 60-15 65-15 20-15 25z"/>
+</g>
+</svg>

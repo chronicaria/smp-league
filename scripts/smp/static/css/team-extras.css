@@ -40,9 +40,10 @@
   padding: .18rem .45rem;
   font-size: .72rem;
 }
-/* ---------- depth chart card rows (Starters / 2nd String / 3rd String) ----------
+/* ---------- depth chart card rows (Starters / Bench / Reserve) ----------
    Horizontal cards: portrait on the left, name/jersey/OVR + per-game line
-   stacked on the right. */
+   stacked on the right. The five columns are explicit tracks, so the two-card
+   Reserve row keeps the card width of the rows above and stays left-aligned. */
 .depth-rows { display: grid; gap: 1rem; }
 .depth-row-label {
   margin: 0 0 .4rem;
@@ -74,6 +75,9 @@ a.depth-card:hover { border-color: var(--team-secondary, var(--accent)); text-de
 .depth-main { display: flex; flex-direction: column; gap: .22rem; min-width: 0; flex: 1 1 auto; }
 .depth-card-top { display: flex; justify-content: space-between; align-items: center; gap: .4rem; width: 100%; }
 .depth-pos { color: var(--muted); font-size: .64rem; font-weight: 700; letter-spacing: .08em; }
+/* Slot the player was fitted into is not the one he actually plays: the dotted
+   underline is the cue that hovering names his real position. */
+.depth-pos--fitted { border-bottom: 1px dotted currentColor; cursor: help; }
 .depth-ovr {
   padding: .06rem .38rem;
   border-radius: .15rem;
@@ -116,19 +120,8 @@ a.depth-card:hover { border-color: var(--team-secondary, var(--accent)); text-de
 .depth-stat { display: grid; gap: 0; justify-items: center; line-height: 1.15; }
 .depth-stat strong { font-size: .76rem; font-variant-numeric: tabular-nums; }
 .depth-stat small { color: var(--muted); font-size: .56rem; font-weight: 700; letter-spacing: .05em; }
-.depth-card--vacant {
-  border-style: dashed;
-  border-color: var(--muted);
-  background: var(--panel);
-  opacity: .7;
-  min-height: 5.6rem;
-}
-.depth-portrait--vacant { border: 2px dashed var(--line); border-radius: 50%; }
-.depth-card--vacant .depth-pos { font-size: .74rem; }
-.depth-vacant-label { color: var(--muted); font-size: .76rem; }
 @media (max-width: 820px) {
   .depth-portrait-wrap { width: 3.5rem; height: 3.5rem; }
-  .depth-card--vacant { min-height: 4.8rem; }
 }
 .pick-row { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .4rem; }
 .pick-chip {

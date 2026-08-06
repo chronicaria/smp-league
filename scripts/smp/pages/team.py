@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import colorsys
 import html
+import itertools
 import random
 import math
 import re
@@ -389,15 +390,35 @@ def team_playoffs_table(team: dict[str, Any], game_items: list[dict[str, Any]], 
 
 DEPTH_SLOTS = ["PG", "SG", "SF", "PF", "C"]
 
+# Fixed shape so every team's chart reads the same. The league caps rosters at 12
+# (gameAttributes.maxRosterSize), so 5 + 5 + 2 covers the whole player list.
+DEPTH_ROWS = [("Starters", 5), ("Bench", 5), ("Reserve", 2)]
 
-def _position_buckets(roster: list[dict[str, Any]], season: int) -> dict[str, list[dict[str, Any]]]:
-    """Each player once, in his single best canonical slot, sorted by OVR desc."""
-    buckets: dict[str, list[dict[str, Any]]] = {slot: [] for slot in DEPTH_SLOTS}
-    for player in roster:
-        buckets[canonical_pos(player, latest_rating(player, season))].append(player)
-    for slot in DEPTH_SLOTS:
-        buckets[slot].sort(key=lambda p: (-safe_int(latest_rating(p, season).get("ovr")), player_name(p)))
-    return buckets
+
+def _fitted_slots(group: list[dict[str, Any]], season: int) -> list[tuple[int, dict[str, Any]]]:
+    """Give each player in ``group`` a distinct PG..C slot, minimising the total
+    displacement along the PG-SG-SF-PF-C spine. Returns (slot index, player)
+    pairs already in left-to-right slot order.
+
+    Solved as an assignment problem rather than a greedy left-to-right pass,
+    which strands players in silly slots (a leftover center at SG). Five slots
+    means at most 120 permutations, so brute force is the lazy correct answer.
+    Assignments that tie on the total are broken twice more. First on the gap
+    profile, worst gap first: a bench of four point guards and one power forward
+    has several fits totalling 7 and only the flattest one avoids printing "C"
+    over a point guard. Then on the per-player gaps in ``group`` order, which is
+    overall-descending, so the higher-rated of two point guards keeps PG. BBGM's
+    combo labels (G/GF/F/FC) reach the spine already collapsed by canonical_pos,
+    the same rounding every other surface on the site shows.
+    """
+    natural = [DEPTH_SLOTS.index(canonical_pos(p, latest_rating(p, season))) for p in group]
+
+    def cost(slots: tuple[int, ...]) -> tuple[int, tuple[int, ...], tuple[int, ...]]:
+        gaps = tuple(abs(slot - nat) for slot, nat in zip(slots, natural))
+        return sum(gaps), tuple(sorted(gaps, reverse=True)), gaps
+
+    best = min(itertools.permutations(range(len(DEPTH_SLOTS)), len(group)), key=cost)
+    return sorted(zip(best, group), key=lambda pair: pair[0])
 
 
 def _injury_cross(player: dict[str, Any]) -> str:
@@ -434,15 +455,24 @@ def _depth_stat_line(player: dict[str, Any], season: int, start_season: int) -> 
 
 def _depth_card(player: dict[str, Any], slot: str, season: int, start_season: int) -> str:
     """One horizontal depth card: portrait on the left, name/jersey/OVR and the
-    per-game stat line stacked on the right."""
+    per-game stat line stacked on the right.
+
+    The label is the slot the player is filling, not necessarily what he is. When
+    the two differ the label gets a dotted underline and names his real position
+    on hover (title) — chosen over a printed marker because it keeps the row
+    scannable while never letting the chart claim a center is a shooting guard.
+    """
     rating = latest_rating(player, season)
+    natural = canonical_pos(player, rating)
+    pos_cls = "depth-pos" if natural == slot else "depth-pos depth-pos--fitted"
+    pos_tip = "" if natural == slot else f' title="Natural position: {natural}"'
     jersey = player.get("jerseyNumber")
     jersey_bit = f'<span class="depth-num">#{esc(jersey)}</span>' if jersey not in (None, "") else ""
     return (
         f'<a class="depth-card" href="{player_url(player, "../")}">'
         f'<span class="depth-portrait-wrap">{_roundel(player, "depth-portrait", "../")}</span>'
         '<span class="depth-main">'
-        f'<span class="depth-card-top"><span class="depth-pos">{slot}</span>'
+        f'<span class="depth-card-top"><span class="{pos_cls}"{pos_tip}>{slot}</span>'
         f'<span class="depth-ovr" title="Overall rating">{esc(rating.get("ovr", "—"))}</span></span>'
         f'<span class="depth-id"><span class="depth-name">{esc(player_name(player))}</span>{_injury_cross(player)}{jersey_bit}</span>'
         f"{_depth_stat_line(player, season, start_season)}"
@@ -451,41 +481,36 @@ def _depth_card(player: dict[str, Any], slot: str, season: int, start_season: in
 
 
 def depth_chart_card(roster: list[dict[str, Any]], season: int, start_season: int = 0) -> str:
-    """Depth chart as three card rows: Starters / 2nd String / Reserves.
+    """Depth chart as three fixed rows: Starters (5) / Bench (5) / Reserve (2).
 
-    A 12-man roster never fills a 5-wide grid three deep, and the position buckets
-    of a best-available draft are lumpy, so only the Starters row pads with
-    "Vacant" — there an empty bucket is real information (nobody plays that spot).
-    Below it the rows just end when a bucket runs out, and everything at depth 3+
-    collapses into one Reserves row instead of a "5th String" row holding one card.
+    Driven by the player list, not by position buckets: the roster in the order
+    the roster table and players/index.html use it (overall desc, then name) is
+    sliced top-down, so every team's chart has the same shape instead of a lumpy
+    one that depends on which positions happened to draft two bodies. Inside a
+    row the players are fitted to PG/SG/SF/PF/C by nearest position — see
+    _fitted_slots — and a card whose slot is not its natural position says so on
+    hover. The Reserve row holds its two cards at full width rather than padding
+    out to five, and a short roster simply stops when the players run out.
     """
-    buckets = _position_buckets(roster, season)
-    starters, second, reserves = [], [], []
-    for slot in DEPTH_SLOTS:
-        fits = buckets[slot]
-        if fits:
-            starters.append(_depth_card(fits[0], slot, season, start_season))
-        else:
-            starters.append(
-                f'<div class="depth-card depth-card--vacant">'
-                '<span class="depth-portrait-wrap depth-portrait--vacant" aria-hidden="true"></span>'
-                f'<span class="depth-main"><span class="depth-card-top"><span class="depth-pos">{slot}</span></span>'
-                '<span class="depth-vacant-label">Vacant</span></span></div>'
-            )
-        if len(fits) > 1:
-            second.append(_depth_card(fits[1], slot, season, start_season))
-        reserves.extend(_depth_card(p, slot, season, start_season) for p in fits[2:])
+    ordered = _sorted_team_roster(roster, season)
     rows_html = []
-    for label, cards in (("Starters", starters), ("2nd String", second), ("Reserves", reserves)):
-        if not cards:
-            continue
+    taken = 0
+    for label, size in DEPTH_ROWS:
+        group = ordered[taken:taken + size]
+        taken += size
+        if not group:
+            break
+        cards = "".join(
+            _depth_card(player, DEPTH_SLOTS[slot], season, start_season)
+            for slot, player in _fitted_slots(group, season)
+        )
         rows_html.append(
             f'<div class="depth-row"><h3 class="depth-row-label">{label}</h3>'
-            f'<div class="depth-row-cards">{"".join(cards)}</div></div>'
+            f'<div class="depth-row-cards">{cards}</div></div>'
         )
     return f"""
     <section class="card depth-chart-card">
-      <div class="section-title-row"><h2>Depth Chart</h2><span class="muted small-copy">depth order by overall · per-game from latest season played · ✚ injured</span></div>
+      <div class="section-title-row"><h2>Depth Chart</h2><span class="muted small-copy">top 5 / next 5 / last 2 by overall · each row fitted to PG–C · per-game from latest season played · ✚ injured</span></div>
       <div class="depth-rows">{''.join(rows_html)}</div>
     </section>
     """

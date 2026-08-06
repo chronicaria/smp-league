@@ -106,10 +106,13 @@ class TestOddsRiverCard(unittest.TestCase):
         html = home.odds_river_card(self.data, self.teams, 2031, history=history)
         self.assertIn("<polyline", html)
         self.assertEqual(html.count('class="oddsr-line"'), 2)  # one line per team
-        # Snapshot ticks: unique phases stay bare, repeats get numbered.
-        self.assertIn(">Pre</text>", html)
+        # Snapshot ticks: the preseason projection is the season's first RS tick,
+        # so the run numbers straight through instead of starting on "Pre".
+        self.assertNotIn(">Pre</text>", html)
         self.assertIn(">RS 1</text>", html)
         self.assertIn(">RS 2</text>", html)
+        self.assertIn(">RS 3</text>", html)
+        self.assertIn("Preseason", html)  # the long hover label still says what it is
         # Team-identity chart colors drive the strokes.
         self.assertIn(team_chart_color(0), html)
         self.assertIn(team_chart_color(1), html)
@@ -366,7 +369,8 @@ class TestPreseasonComposition(unittest.TestCase):
 
 
 class TestPlayoffOddsPrecision(unittest.TestCase):
-    """PO% / Finals% / Title% AND the seed-distribution cells all show one decimal."""
+    """PO% / Finals% / Title% show one decimal; the ten seed-distribution cells
+    round to whole percents while sorting on the full-precision value."""
 
     def setUp(self):
         self._real_league_sim = home.league_sim
@@ -391,10 +395,11 @@ class TestPlayoffOddsPrecision(unittest.TestCase):
         self.assertIn("25.5%", html)     # rounds to one decimal, not an int
         self.assertIn("&lt;0.1%", html)  # trace odds floor, not "0.0%"
         self.assertIn(">—<", html)       # exactly zero stays a dash
-        # Seed-distribution cells: compact one-decimal, in tight seed cells.
-        self.assertIn(">62.0<", html)
-        self.assertIn(">38.0<", html)
-        self.assertNotIn(">62<", html)
+        # Seed-distribution cells: compact whole percents, in tight seed cells.
+        self.assertIn(">62<", html)
+        self.assertIn(">38<", html)
+        self.assertNotIn(">62.0<", html)
+        self.assertIn('data-sort="62.0"', html)  # sorting keeps the full value
         self.assertIn('class="seed-cell', html)
 
     def test_odds_pct_formatter(self):
@@ -409,6 +414,13 @@ class TestPlayoffOddsPrecision(unittest.TestCase):
         self.assertEqual(home._pct1(0.04), "&lt;0.1")
         self.assertEqual(home._pct1(31.44), "31.4")
         self.assertEqual(home._pct1(100.0), "100.0")
+
+    def test_whole_pct_formatter(self):
+        self.assertEqual(home._pct0(0.0), "—")        # impossible seed stays a dash
+        self.assertEqual(home._pct0(0.4), "&lt;1")    # a trace never rounds down to "0"
+        self.assertEqual(home._pct0(31.44), "31")
+        self.assertEqual(home._pct0(31.6), "32")
+        self.assertEqual(home._pct0(100.0), "100")
 
 
 class TestHomeFinancesTable(unittest.TestCase):

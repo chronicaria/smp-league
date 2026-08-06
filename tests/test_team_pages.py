@@ -151,24 +151,54 @@ class TestHonestSeasonFallbacks(unittest.TestCase):
 
 
 class TestDepthChartCards(unittest.TestCase):
-    def test_card_rows_labels_vacancies_and_stat_lines(self):
+    def _twelve(self):
+        """Twelve players, overall descending, deliberately guard-heavy so the
+        slot fitting has to push bodies away from their natural spot."""
+        return [_player(i, "P", f"L{i:02d}", pos=pos, ovr=90 - i)
+                for i, pos in enumerate(["PG", "PG", "SG", "SF", "C",
+                                         "PG", "SG", "SF", "PF", "C",
+                                         "SG", "C"])]
+
+    def test_rows_are_five_five_two_in_player_list_order(self):
+        html = team_page.depth_chart_card(self._twelve(), 2031, 2026)
+        for label in ("Starters", "Bench", "Reserve"):
+            self.assertIn(label, html)
+        self.assertNotIn("2nd String", html)
+        self.assertNotIn("depth-card--vacant", html)  # a full roster never goes vacant
+        rows = html.split('class="depth-row-label"')[1:]
+        self.assertEqual([row.count('class="depth-card"') for row in rows], [5, 5, 2])
+        # top 5 of the list start, next 5 come off the bench, last 2 sit
+        self.assertLess(html.index("L00"), html.index("L04"))
+        self.assertLess(html.index("L04"), html.index("L05"))
+        self.assertLess(html.index("L09"), html.index("L10"))
+
+    def test_row_fits_players_to_the_nearest_slot(self):
+        # PG PG SF SF C must still fill PG SG SF PF C: the second point guard
+        # slides to SG and the center-with-no-C-left situation never arises
+        # because the extra small forward takes PF instead.
+        roster = [
+            _player(1, "First", "Point", pos="PG", ovr=80),
+            _player(2, "Second", "Point", pos="PG", ovr=76),
+            _player(3, "First", "Wing", pos="SF", ovr=74),
+            _player(4, "Second", "Wing", pos="SF", ovr=72),
+            _player(5, "Big", "Center", pos="C", ovr=70),
+        ]
+        html = team_page.depth_chart_card(roster, 2031, 2026)
+        # the better point guard keeps PG, the other is marked as fitted to SG
+        self.assertLess(html.index("First Point"), html.index("Second Point"))
+        self.assertIn('title="Natural position: PG">SG', html)
+        self.assertIn('title="Natural position: SF">PF', html)
+        self.assertNotIn('title="Natural position: C"', html)  # the center keeps C
+
+    def test_card_contents_and_stat_lines(self):
         roster = [
             _player(1, "Point", "Guard", pos="PG", ovr=70,
                     stats=[_stat_row(gp=40, pts=800, ast=200)]),
             _player(2, "Backup", "Guard", pos="PG", ovr=60),
-            _player(3, "Deep", "Guard", pos="PG", ovr=50),
-            _player(4, "Fourth", "Guard", pos="PG", ovr=45),
             _player(5, "Big", "Center", pos="C", ovr=65),
         ]
         roster[0]["jerseyNumber"] = 7
         html = team_page.depth_chart_card(roster, 2031, 2026)
-        for label in ("Starters", "2nd String", "Reserves"):
-            self.assertIn(label, html)
-        # a 12-man roster never fills a 5-wide grid three deep: everything at
-        # depth 3+ collapses into Reserves instead of a "3rd String" row
-        self.assertNotIn("3rd String", html)
-        # only the Starters row pads to five slots; SG/SF/PF have nobody at all
-        self.assertEqual(html.count("depth-card--vacant"), 3)
         self.assertIn("#7", html)                      # jersey number shown
         self.assertIn("depth-ovr", html)               # OVR chip
         self.assertIn("<strong>20.0</strong><small>PTS</small>", html)  # 800/40
@@ -176,13 +206,12 @@ class TestDepthChartCards(unittest.TestCase):
         for p in roster:
             self.assertEqual(html.count(lg.player_url(p, "../")), 1)
 
-    def test_rows_below_the_starters_end_when_the_bucket_runs_out(self):
-        roster = [_player(1, "Only", "Guy", pos="PG", ovr=70)]
-        html = team_page.depth_chart_card(roster, 2031, 2026)
+    def test_short_roster_fills_starters_and_stops(self):
+        html = team_page.depth_chart_card([_player(1, "Only", "Guy", pos="PG", ovr=70)], 2031, 2026)
         self.assertIn("Starters", html)
-        self.assertEqual(html.count("depth-card--vacant"), 4)  # SG/SF/PF/C empty
-        self.assertNotIn("2nd String", html)
-        self.assertNotIn("Reserves", html)
+        self.assertEqual(html.count('class="depth-card"'), 1)  # no Vacant padding
+        self.assertNotIn("Bench", html)
+        self.assertNotIn("Reserve", html)
 
 
 class TestScoringShare(unittest.TestCase):

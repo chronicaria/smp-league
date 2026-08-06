@@ -21,7 +21,9 @@ from .core import (
     draft_prospects,
     free_agents,
     game_slug_from_gid,
+    get_attr_value,
     is_completed_game_item,
+    nav_pages,
     normalize_positions,
     phase_value,
     player_name,
@@ -155,6 +157,27 @@ def write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+SITE_ORIGIN = "https://chronicaria.github.io"
+
+
+def sitemap_xml(teams: list[dict[str, Any]]) -> str:
+    """The nav's own page list, as a sitemap.
+
+    Hand-maintaining this rotted the moment a page came or went: it was still
+    advertising rivalries.html, which year one does not generate, and had never
+    heard of league-draft.html. nav_pages() is the live list — build.py trims
+    Rivalries out of NAV_LEAGUE before anything renders — so reading it here means
+    the sitemap can only ever name pages that exist.
+    """
+    urls = [f"{SITE_ORIGIN}/"]
+    urls += [f"{SITE_ORIGIN}/{url}" for _, url, key in nav_pages() if key != "home"]
+    urls += [f"{SITE_ORIGIN}/teams/{team_slug(t)}.html" for t in sorted(teams, key=team_sort_key)]
+    body = "\n".join(f"  <url><loc>{u}</loc></url>" for u in urls)
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+            f"{body}\n</urlset>\n")
+
+
 # Day exports are named "2026_day1.json"; the season prefix is optional so the
 # older bare "day1.json" form still matches.
 DAY_EXPORT_RE = re.compile(r"(?:(?P<season>\d{4})_)?day(?P<day>\d+)")
@@ -183,10 +206,33 @@ def previous_day_json(json_path: Path) -> Path | None:
 NAV_LEAGUE_ALL = list(NAV_LEAGUE)
 
 
+def league_start_season(data: dict[str, Any], season: int) -> int:
+    """The league's own first season, for the "seasons to show" floor.
+
+    This used to be hardcoded to 2026, which was SMP I's first year. A reboot
+    resets the season counter -- SMP II plays 2004 -- and the floor did not move
+    with it, so every ``start_season <= s <= season`` window in the site closed on
+    nothing and a stat line that should read 12.4 rendered as an em-dash. Reading
+    the export's own startingSeason means the floor can never disagree with the
+    league it is describing again.
+    """
+    ga = data.get("gameAttributes") or {}
+    if isinstance(ga, list):
+        ga = {x["key"]: x["value"] for x in ga if isinstance(x, dict) and "key" in x}
+    start = safe_int(get_attr_value(ga.get("startingSeason"), season), 0)
+    if start:
+        return start
+    # No startingSeason (hand-built or very old export): fall back to the earliest
+    # season anyone has a row for, and never later than the season being rendered.
+    seasons = [safe_int(s.get("season")) for team in data.get("teams") or []
+               for s in (team.get("seasons") or []) if s.get("season") is not None]
+    return min(seasons + [season]) if seasons else season
+
+
 def generate_site(
     json_path: Path,
     out_dir: Path,
-    start_season: int = 2026,
+    start_season: int | None = None,
     clean: bool = False,
     schedule_season: int | None = None,
     schedule_days: int | None = None,
@@ -196,6 +242,8 @@ def generate_site(
     normalize_positions(data)
     register_site_meta(data, json_path.name)
     season = current_season(data)
+    if start_season is None:
+        start_season = league_start_season(data, season)
     teams = sorted(data.get("teams", []), key=team_sort_key)
     players = active_players(data)
     fa_players = free_agents(data)
@@ -237,6 +285,7 @@ def generate_site(
     out_dir.mkdir(parents=True, exist_ok=True)
     write_text(out_dir / "assets" / "styles.css", stylesheet())
     write_text(out_dir / "assets" / "site.js", javascript())
+    write_text(out_dir / "sitemap.xml", sitemap_xml(teams))
 
     teams_by_tid = {int(t.get("tid")): t for t in teams if t.get("tid") is not None}
     search_index = {
@@ -358,7 +407,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate a static HTML basketball league site from a JSON export.")
     parser.add_argument("json_file", type=Path, help="Path to the Basketball GM-style JSON file, such as league-data/2026_day1.json")
     parser.add_argument("--out", type=Path, default=Path("site"), help="Output directory for the generated website")
-    parser.add_argument("--start-season", type=int, default=2026, help="First season to show on player stat pages")
+    parser.add_argument("--start-season", type=int, default=None, help="First season to show on player stat pages. Defaults to the export's own startingSeason.")
     parser.add_argument("--schedule-season", type=int, default=None, help="Season to use for Schedule/Scores pages. Defaults to an exported schedule, or the upcoming season during offseason exports.")
     parser.add_argument("--schedule-days", type=int, default=None, help="Optional target number of calendar days for a generated schedule, such as 46.")
     parser.add_argument("--clean", action="store_true", help="Delete the output directory before generating")
