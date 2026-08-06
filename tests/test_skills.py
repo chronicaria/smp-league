@@ -91,14 +91,30 @@ class TestRatingSkills(unittest.TestCase):
         self.assertEqual(rating_skills({}), [])
         self.assertEqual(rating_skills({"tp": 99}), [])  # oiq missing -> "3" can't be judged
 
-    def test_carmelo_anthony_is_an_athletic_interior_post_volume_scorer(self):
-        """The one badge set checked against the live game, not the archive."""
+    def test_derived_badges_match_the_games_own_for_every_rostered_player(self):
+        """Our rules reproduce Basketball GM's, checked against the live export.
+
+        This used to pin one player's badges to a literal list. That rots on
+        contact with the league: Carmelo Anthony tore a meniscus on opening day,
+        the injury penalty took his ratings down, and A/Di/Po/V legitimately
+        became Po/V — a green test turning red over a knee, not over a bug. The
+        invariant worth holding is that our derivation agrees with the skills the
+        game itself stamped on the same ratings row, for everyone.
+        """
         with open(_EXPORT, encoding="utf-8") as fh:
             data = json.load(fh)
-        melo = next(p for p in data["players"]
-                    if p["firstName"] == "Carmelo" and p["lastName"] == "Anthony")
-        rating = {k: v for k, v in melo["ratings"][-1].items() if k != "skills"}
-        self.assertEqual(rating_skills(rating), ["A", "Di", "Po", "V"])
+        rostered = [p for p in data["players"] if isinstance(p.get("tid"), int) and p["tid"] >= 0]
+        self.assertGreater(len(rostered), 0)
+        checked = 0
+        for player in rostered:
+            row = player["ratings"][-1]
+            if "skills" not in row:
+                continue
+            derived = rating_skills({k: v for k, v in row.items() if k != "skills"})
+            with self.subTest(player=f'{player["firstName"]} {player["lastName"]}'):
+                self.assertEqual(derived, list(row["skills"]))
+            checked += 1
+        self.assertGreater(checked, 100)
 
 
 if __name__ == "__main__":

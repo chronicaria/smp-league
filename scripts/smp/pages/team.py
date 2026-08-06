@@ -552,7 +552,7 @@ def depth_chart_card(roster: list[dict[str, Any]], season: int, start_season: in
     hover. The Reserve row holds its two cards at full width rather than padding
     out to five, and a short roster simply stops when the players run out.
     """
-    ordered = _sorted_team_roster(roster, season)
+    ordered = _depth_order(roster, season)
     # The caption is a legend, so it may only name markers the cards actually
     # carry. In preseason no player has a played season and nobody is hurt, so
     # the old fixed string promised "per-game from latest season played" over
@@ -562,7 +562,9 @@ def depth_chart_card(roster: list[dict[str, Any]], season: int, start_season: in
     # something.
     has_stats = any(_depth_played_stat(p, season, start_season) for p in ordered)
     has_injury = any(_injury_cross(p) for p in ordered)
-    legend = ["top 5 / next 5 / last 2 by overall", "each row fitted to PG–C"]
+    by_order = all(isinstance(p.get("rosterOrder"), int) for p in ordered)
+    legend = ["starters / bench / reserve" if by_order else "top 5 / next 5 / last 2 by overall",
+              "each row fitted to PG–C"]
     legend.append("per-game from latest season played" if has_stats else "no games played yet")
     if has_injury:
         legend.append("✚ injured")
@@ -1907,6 +1909,23 @@ def roster_tabs(sorted_roster: list[dict[str, Any]], season: int, start_season: 
 
 def _sorted_team_roster(roster: list[dict[str, Any]], season: int) -> list[dict[str, Any]]:
     return sorted(roster, key=lambda p: (-latest_rating(p, season).get("ovr", 0), player_name(p)))
+
+
+def _depth_order(roster: list[dict[str, Any]], season: int) -> list[dict[str, Any]]:
+    """Roster in depth order: the league's own rosterOrder, best available second.
+
+    The roster TABLE is a leaderboard and sorts by overall; the depth chart is a
+    statement about who plays, and that is the manager's call. When a man goes
+    down the league moves him to the bottom of the roster and activates someone
+    in his place, so an injured 72 sits at slot 11 while a healthy 61 dresses.
+    Sorting the chart by overall would put the injured star back in the starting
+    five and contradict the projected box scores, which dress the same ten the
+    manager did. Overall descending is the fallback for an export with no
+    rosterOrder — which is every export before the season starts.
+    """
+    if all(isinstance(p.get("rosterOrder"), int) for p in roster):
+        return sorted(roster, key=lambda p: p["rosterOrder"])
+    return _sorted_team_roster(roster, season)
 
 
 def render_team_roster_page(team: dict[str, Any], roster: list[dict[str, Any]], teams: list[dict[str, Any]], season: int, start_season: int, data: dict[str, Any] | None = None, game_items: list[dict[str, Any]] | None = None, game_logs: dict[int, list[dict[str, Any]]] | None = None, tfin: dict[str, Any] | None = None) -> str:

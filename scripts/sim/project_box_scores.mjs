@@ -196,14 +196,19 @@ const playersByTid = Map.groupBy(league.players, (p) => p.tid);
 // The league dresses ten; the 11th and 12th men are reserve and do not play.
 const DRESSED = 10;
 
-// Which ten dress is decided the same way the site orders a roster everywhere else --
-// overall descending, then name (team.py::_sorted_team_roster). NOT by BBGM's own
-// rosterOrder: the two disagree on ties, and on two of the ten rosters they name a
-// different reserve pair than the depth chart's Reserve row does. The site says out loud
-// who sits, so the projection has to bench those exact two.
+// Which ten dress is the manager's call, and rosterOrder is where he makes it: when a
+// man goes down, the league moves him to the bottom of the roster and activates someone
+// in his place. Sorting by overall instead -- which is what this did while every roster
+// was still auto-sorted and nobody was hurt -- would dress the injured star and bench
+// the healthy body brought in to cover him. Overall descending, then name, is only the
+// fallback for an export that carries no rosterOrder at all.
 const dressedFor = (tid) => {
 	const roster = [...(playersByTid.get(tid) ?? [])];
+	const ordered = roster.every((p) => Number.isInteger(p.rosterOrder));
 	roster.sort((a, b) => {
+		if (ordered) {
+			return a.rosterOrder - b.rosterOrder;
+		}
 		const ovrA = a.ratings.at(-1).ovr;
 		const ovrB = b.ratings.at(-1).ovr;
 		if (ovrA !== ovrB) {
