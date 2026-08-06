@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head><script>(function(){var d=document.documentElement,t=null,a=null;try{t=localStorage.getItem("theme");a=localStorage.getItem("myTeamAccent");}catch(e){}d.dataset.themePref=(t==="light"||t==="dark")?t:"auto";d.dataset.theme=(t==="light"||t==="dark")?t:(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");if(a&&/^#[0-9A-Fa-f]{6}$/.test(a)){d.style.setProperty("--accent",a);d.style.setProperty("--accent-soft","color-mix(in srgb, "+a+" 14%, transparent)");}})();</script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TOR at MAN Box Score — SMP Basketball League</title>
+  <meta name="description" content="TOR at MAN Box Score — stats, standings, and stories from the SMP Basketball League.">
+  <meta property="og:title" content="TOR at MAN Box Score — SMP Basketball League">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="SMP Basketball League">
+  <meta property="og:description" content="TOR at MAN Box Score — stats, standings, and stories from the SMP Basketball League.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏀</text></svg>">
+  <link rel="stylesheet" href="../assets/styles.css">
+  <script defer src="../assets/site.js"></script>
+</head>
+<body data-root="../">
+  
+    <header class="site-header">
+      <div class="brand"><a href="../index.html">SMP Basketball League</a></div>
+      <div class="nav-search">
+        <input type="search" placeholder="Search players &amp; teams…" data-global-search autocomplete="off" aria-label="Search players and teams" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="global-search-results" aria-activedescendant="">
+        <div class="search-results" id="global-search-results" data-search-results role="listbox" hidden></div>
+      </div>
+      <button class="nav-burger" type="button" aria-label="Toggle menu" aria-controls="primary-nav" aria-expanded="false" data-nav-burger>☰ Menu</button>
+      <nav class="primary-nav" id="primary-nav">
+        <a class="" href="../index.html">Home</a><a class="active" href="../schedule.html" aria-current="page">Schedule</a><a class="" href="../players/index.html">Players</a>
+        <details class="nav-dropdown team-dropdown"><summary>Teams</summary><div class="team-menu nav-menu" aria-label="Teams"><a class="" data-tid="2" data-abbrev="CAM" href="../teams/cambridge-platypuses-2.html">Cambridge Platypuses</a><a class="" data-tid="3" data-abbrev="DUR" href="../teams/durham-destroyers-3.html">Durham Destroyers</a><a class="" data-tid="6" data-abbrev="GOO" href="../teams/gooning-gooners-6.html">Gooning Gooners</a><a class="" data-tid="5" data-abbrev="ITH" href="../teams/ithaca-thunder-5.html">Ithaca Thunder</a><a class="" data-tid="7" data-abbrev="MAN" href="../teams/manhattan-elephants-7.html">Manhattan Elephants</a><a class="" data-tid="9" data-abbrev="QUE" href="../teams/queens-pigeons-9.html">Queens Pigeons</a><a class="" data-tid="0" data-abbrev="ROC" href="../teams/rochester-dragons-0.html">Rochester Dragons</a><a class="" data-tid="8" data-abbrev="STO" href="../teams/stony-brook-stingrays-8.html">Stony Brook Stingrays</a><a class="" data-tid="4" data-abbrev="TOR" href="../teams/toronto-jays-4.html">Toronto Jays</a><a class="" data-tid="1" data-abbrev="WAL" href="../teams/waltham-bears-1.html">Waltham Bears</a></div></details>
+        <details class="nav-dropdown"><summary>League</summary><div class="nav-menu" aria-label="League"><a class="" href="../league-draft.html">League Draft</a><a class="" href="../free-agency.html">Free Agency</a><a class="" href="../draft.html">Draft</a><a class="" href="../history.html">History</a><a class="" href="../records.html">Records</a><a class="" href="../classics.html">Greatest Games</a><a class="" href="../wrapped.html">Wrapped</a></div></details>
+        <details class="nav-dropdown"><summary>Tools</summary><div class="nav-menu" aria-label="Tools"><a class="" href="../trade.html">Trade Machine</a><a class="" href="../compare.html">Compare</a><a class="" href="../lineup.html">Lineup Lab</a><a class="" href="../simulator.html">Win-Out Sim</a></div></details>
+      </nav>
+      <div class="header-controls">
+        <select class="my-team-picker" data-my-team-picker aria-label="My team"><option value="">My team…</option><option value="2">CAM — Cambridge Platypuses</option><option value="3">DUR — Durham Destroyers</option><option value="6">GOO — Gooning Gooners</option><option value="5">ITH — Ithaca Thunder</option><option value="7">MAN — Manhattan Elephants</option><option value="9">QUE — Queens Pigeons</option><option value="0">ROC — Rochester Dragons</option><option value="8">STO — Stony Brook Stingrays</option><option value="4">TOR — Toronto Jays</option><option value="1">WAL — Waltham Bears</option></select>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Theme: auto" title="Theme: auto — click to change"><svg class="tt-icon tt-auto" viewBox="0 0 16 16" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.8v12.4A6.2 6.2 0 0 0 8 1.8z" fill="currentColor"/></svg><svg class="tt-icon tt-dark" viewBox="0 0 16 16" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><path d="M13.4 10.1A5.9 5.9 0 0 1 5.9 2.6a6.2 6.2 0 1 0 7.5 7.5z" fill="currentColor"/></svg><svg class="tt-icon tt-light" viewBox="0 0 16 16" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="8" r="3.4" fill="currentColor"/><g stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 .9v1.8M8 13.3v1.8M.9 8h1.8M13.3 8h1.8M2.98 2.98l1.27 1.27M11.75 11.75l1.27 1.27M13.02 2.98l-1.27 1.27M4.25 11.75l-1.27 1.27"/></g></svg></button>
+      </div>
+    </header>
+    
+  <main class="page-shell">
+    
+    
+    <section class="box-score-hero card gx-hero" style="--gx-home-primary:#6B21A8;--gx-home-secondary:#D4A5F5;--gx-home-chart:#A855F7;--gx-away-primary:#1D4F91;--gx-away-secondary:#7FB2E5;--gx-away-chart:#3B82F6">
+      <div class="gx-bg gx-bg-away" aria-hidden="true"></div><div class="gx-bg gx-bg-home" aria-hidden="true"></div>
+      <div class="game-pager"><a class="button-link gx-pager" href="../games/210.html"><span class="gx-pager-dir">← Prev</span><span class="gx-pager-ctx">Day 7 · GOO @ QUE</span></a></div>
+      <div class="scoreboard-core gx-core">
+        <p class="eyebrow">Day 7 · Season 2004</p>
+        <h1 class="gx-matchup"><span class="gx-side gx-side-away"><a class="gx-team-name" href="../teams/toronto-jays-4.html">Toronto Jays</a><span class="gx-team-record">0-0</span></span><span class="gx-at">@</span><span class="gx-side gx-side-home"><a class="gx-team-name" href="../teams/manhattan-elephants-7.html">Manhattan Elephants</a><span class="gx-team-record">0-0</span></span></h1>
+        
+        
+        
+      <div class="gx-proj" role="group" aria-label="Projection: TOR 48.2 percent, MAN 51.8 percent, spread MAN -0.5">
+        <div class="gx-proj-nums">
+          <span class="gx-proj-side gx-proj-away">
+            <span class="gx-proj-pct">48.2%</span>
+            <span class="gx-proj-team">TOR</span>
+          </span>
+          <span class="gx-proj-spread" title="Projected spread — sim strengths plus a 1.5-point home edge">MAN -0.5</span>
+          <span class="gx-proj-side gx-proj-home gx-proj-fav">
+            <span class="gx-proj-pct">51.8%</span>
+            <span class="gx-proj-team">MAN</span>
+          </span>
+        </div>
+        <div class="gx-proj-bar" aria-hidden="true"><span class="gx-proj-fill gx-proj-fill-away" style="width:48.2%"></span><span class="gx-proj-fill gx-proj-fill-home" style="width:51.8%"></span></div>
+        <p class="gx-proj-caption muted small-copy">Win probability · same model as the season sim</p>
+      </div>
+    
+        <p class="scheduled-note">Scheduled game · box score to come.</p>
+        
+      </div>
+      <div class="game-pager"><a class="button-link gx-pager" href="../games/212.html"><span class="gx-pager-dir">Next →</span><span class="gx-pager-ctx">Day 7 · STO @ ITH</span></a></div>
+    </section>
+    
+    
+    
+    <section class="card">
+      <div class="section-title-row"><h2>Matchup</h2><span class="muted small-copy">season-to-date</span></div>
+      <div class="table-wrap fit-table">
+        <table class="cmp-table">
+          <thead><tr><th><a href="../teams/toronto-jays-4.html">TOR</a></th><th></th><th><a href="../teams/manhattan-elephants-7.html">MAN</a></th></tr></thead>
+          <tbody><tr><td>0-0</td><td class="cmp-label">Record</td><td>0-0</td></tr><tr><td>—</td><td class="cmp-label">Streak</td><td>—</td></tr><tr><td>—</td><td class="cmp-label">Last 10</td><td>—</td></tr><tr><td>—</td><td class="cmp-label">Points/G</td><td>—</td></tr><tr><td>—</td><td class="cmp-label">Allowed/G</td><td>—</td></tr><tr><td>—</td><td class="cmp-label">MOV</td><td>—</td></tr><tr><td>—</td><td class="cmp-label">eFG%</td><td>—</td></tr><tr><td>—</td><td class="cmp-label">TOV%</td><td>—</td></tr><tr><td>—</td><td class="cmp-label">FT/FGA</td><td>—</td></tr></tbody>
+        </table>
+      </div>
+      <div class="preview-injuries">
+        <h3 class="small-copy muted">INJURY REPORT</h3>
+        <p class="small-copy"><strong>TOR:</strong> <span class="healthy">no injuries</span></p><p class="small-copy"><strong>MAN:</strong> <span class="healthy">no injuries</span></p>
+      </div>
+    </section>
+    
+    
+    <section class="box-team-section">
+      <h2><a href="../teams/toronto-jays-4.html">TOR</a></h2>
+      <p class="muted small-copy">Projected active rotation · stats arrive after tip-off.</p>
+      <div class="table-wrap box-table-wrap">
+        <table data-sortable class="box-score-table">
+          <caption class="sr-only">Toronto Jays box score</caption>
+          <thead><tr><th scope="col">Name</th><th scope="col">Pos</th><th scope="col">MP</th><th scope="col">FG</th><th scope="col">3P</th><th scope="col">FT</th><th scope="col">ORB</th><th scope="col">TRB</th><th scope="col">AST</th><th scope="col">TOV</th><th scope="col" title="Steals per game">STL</th><th scope="col" title="Blocks per game">BLK</th><th scope="col">BA</th><th scope="col">PF</th><th scope="col">PTS</th><th scope="col">+/-</th><th scope="col" title="Fantasy points">FPTS</th></tr></thead>
+          <tbody><tr><td class="name-cell" data-sort="Steve Nash"><span class="muted number">26</span> <a class="player-link" href="../players/steve-nash-25.html">Steve Nash</a> <span class="mini-skill">3</span><span class="mini-skill">B</span><span class="mini-skill">Dp</span><span class="mini-skill">Ps</span></td><td data-sort="PG">PG</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr><td class="name-cell" data-sort="Metta World Peace"><span class="muted number">15</span> <a class="player-link" href="../players/metta-world-peace-14.html">Metta World Peace</a> <span class="mini-skill">A</span><span class="mini-skill">Di</span><span class="mini-skill">Dp</span></td><td data-sort="SF">SF</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr><td class="name-cell" data-sort="Carmelo Anthony"><span class="muted number">3</span> <a class="player-link" href="../players/carmelo-anthony-2.html">Carmelo Anthony</a> <span class="mini-skill">A</span><span class="mini-skill">Di</span><span class="mini-skill">Po</span><span class="mini-skill">V</span></td><td data-sort="SF">SF</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr><td class="name-cell" data-sort="Allen Iverson"><span class="muted number">9</span> <a class="player-link" href="../players/allen-iverson-63.html">Allen Iverson</a> <span class="mini-skill">B</span><span class="mini-skill">Dp</span><span class="mini-skill">Ps</span></td><td data-sort="PG">PG</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr><td class="name-cell" data-sort="Brad Miller"><span class="muted number">8</span> <a class="player-link" href="../players/brad-miller-62.html">Brad Miller</a> <span class="mini-skill">Di</span><span class="mini-skill">Ps</span><span class="mini-skill">R</span></td><td data-sort="C">C</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr class="bench-start"><td class="name-cell" data-sort="Cuttino Mobley"><span class="muted number">50</span> <a class="player-link" href="../players/cuttino-mobley-104.html">Cuttino Mobley</a> <span class="mini-skill">3</span><span class="mini-skill">Dp</span></td><td data-sort="SG">SG</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr><td class="name-cell" data-sort="Rasheed Wallace"><span class="muted number">43</span> <a class="player-link" href="../players/rasheed-wallace-97.html">Rasheed Wallace</a> <span class="mini-skill">3</span><span class="mini-skill">Di</span></td><td data-sort="C">C</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr><td class="name-cell" data-sort="Keith Van Horn"><span class="muted number">51</span> <a class="player-link" href="../players/keith-van-horn-105.html">Keith Van Horn</a> <span class="mini-skill">3</span></td><td data-sort="PF">PF</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr><td class="name-cell" data-sort="Tim Thomas"><span class="muted number">36</span> <a class="player-link" href="../players/tim-thomas-90.html">Tim Thomas</a> <span class="mini-skill">3</span></td><td data-sort="PF">PF</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr><td class="name-cell" data-sort="Carlos Boozer"><span class="muted number">35</span> <a class="player-link" href="../players/carlos-boozer-34.html">Carlos Boozer</a> <span class="mini-skill">R</span></td><td data-sort="PF">PF</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr></tbody>
+        </table>
+      </div>
+      
+    </section>
+    
+    
+    <section class="box-team-section">
+      <h2><a href="../teams/manhattan-elephants-7.html">MAN</a></h2>
+      <p class="muted small-copy">Projected active rotation · stats arrive after tip-off.</p>
+      <div class="table-wrap box-table-wrap">
+        <table data-sortable class="box-score-table">
+          <caption class="sr-only">Manhattan Elephants box score</caption>
+          <thead><tr><th scope="col">Name</th><th scope="col">Pos</th><th scope="col">MP</th><th scope="col">FG</th><th scope="col">3P</th><th scope="col">FT</th><th scope="col">ORB</th><th scope="col">TRB</th><th scope="col">AST</th><th scope="col">TOV</th><th scope="col" title="Steals per game">STL</th><th scope="col" title="Blocks per game">BLK</th><th scope="col">BA</th><th scope="col">PF</th><th scope="col">PTS</th><th scope="col">+/-</th><th scope="col" title="Fantasy points">FPTS</th></tr></thead>
+          <tbody><tr><td class="name-cell" data-sort="Kobe Bryant"><span class="muted number">6</span> <a class="player-link" href="../players/kobe-bryant-5.html">Kobe Bryant</a> <span class="mini-skill">A</span><span class="mini-skill">B</span><span class="mini-skill">Dp</span><span class="mini-skill">Ps</span><span class="mini-skill">V</span></td><td data-sort="SG">SG</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr><td class="name-cell" data-sort="Dirk Nowitzki"><span class="muted number">8</span> <a class="player-link" href="../players/dirk-nowitzki-7.html">Dirk Nowitzki</a> <span class="mini-skill">3</span><span class="mini-skill">A</span><span class="mini-skill">Di</span><span class="mini-skill">Dp</span><span class="mini-skill">V</span></td><td data-sort="C">C</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr><td class="name-cell" data-sort="Jermaine O&#x27;Neal"><span class="muted number">30</span> <a class="player-link" href="../players/jermaine-o-neal-29.html">Jermaine O&#x27;Neal</a> <span class="mini-skill">A</span><span class="mini-skill">Di</span><span class="mini-skill">Po</span><span class="mini-skill">R</span></td><td data-sort="C">C</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr><td class="name-cell" data-sort="Ricky Davis"><span class="muted number">42</span> <a class="player-link" href="../players/ricky-davis-41.html">Ricky Davis</a> </td><td data-sort="SG">SG</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr><td class="name-cell" data-sort="Pau Gasol"><span class="muted number">32</span> <a class="player-link" href="../players/pau-gasol-31.html">Pau Gasol</a> <span class="mini-skill">A</span><span class="mini-skill">Di</span><span class="mini-skill">Po</span><span class="mini-skill">R</span></td><td data-sort="C">C</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr class="bench-start"><td class="name-cell" data-sort="Chris Webber"><span class="muted number">1</span> <a class="player-link" href="../players/chris-webber-107.html">Chris Webber</a> </td><td data-sort="PF">PF</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr><td class="name-cell" data-sort="Hedo Türkoğlu"><span class="muted number">10</span> <a class="player-link" href="../players/hedo-turkoglu-64.html">Hedo Türkoğlu</a> <span class="mini-skill">3</span></td><td data-sort="PF">PF</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr><td class="name-cell" data-sort="Kenyon Martin"><span class="muted number">19</span> <a class="player-link" href="../players/kenyon-martin-73.html">Kenyon Martin</a> <span class="mini-skill">Di</span></td><td data-sort="PF">PF</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr><td class="name-cell" data-sort="Mike Miller"><span class="muted number">53</span> <a class="player-link" href="../players/mike-miller-52.html">Mike Miller</a> <span class="mini-skill">3</span><span class="mini-skill">Ps</span></td><td data-sort="SF">SF</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr><tr><td class="name-cell" data-sort="Rafer Alston"><span class="muted number">52</span> <a class="player-link" href="../players/rafer-alston-106.html">Rafer Alston</a> <span class="mini-skill">3</span><span class="mini-skill">Ps</span></td><td data-sort="PG">PG</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr></tbody>
+        </table>
+      </div>
+      
+    </section>
+    
+    
+    
+    <section class="card">
+      <div class="section-title-row"><h2>Season Series</h2><span class="muted small-copy">First meeting of the season</span></div>
+      <div class="series-row"><a class="series-chip" href="../games/189.html">Day 2: TOR @ MAN</a><a class="series-chip current" href="../games/211.html">Day 7: TOR @ MAN</a><a class="series-chip" href="../games/326.html">Day 31: MAN @ TOR</a><a class="series-chip" href="../games/359.html">Day 38: MAN @ TOR</a></div>
+    </section>
+    
+    
+  </main>
+  
+  <footer class="site-footer">
+    <nav class="footer-links" aria-label="Site map"><a href="../index.html">Home</a><a href="../schedule.html">Schedule</a><a href="../players/index.html">Players</a><a href="../league-draft.html">League Draft</a><a href="../free-agency.html">Free Agency</a><a href="../draft.html">Draft</a><a href="../history.html">History</a><a href="../records.html">Records</a><a href="../classics.html">Greatest Games</a><a href="../wrapped.html">Wrapped</a><a href="../trade.html">Trade Machine</a><a href="../compare.html">Compare</a><a href="../lineup.html">Lineup Lab</a><a href="../simulator.html">Win-Out Sim</a></nav>
+    <p class="footer-meta"><span>Season 2004 · Regular Season</span><span class="footer-sep" aria-hidden="true">·</span><span>Generated from 2004_preseason.json</span></p>
+  </footer>
+
+  <script type="application/json" id="smp-config" data-team-colors>{"season":2004,"phase":1,"phaseLabel":"Regular Season","teamColors":{"0":{"primary":"#9D174D","secondary":"#F9A8C8","chart":"#EC4899","on":"#FFFFFF","abbrev":"ROC","name":"Rochester Dragons","url":"teams/rochester-dragons-0.html"},"1":{"primary":"#7A3E12","secondary":"#E0A76B","chart":"#8B5A2B","on":"#FFFFFF","abbrev":"WAL","name":"Waltham Bears","url":"teams/waltham-bears-1.html"},"2":{"primary":"#0F766E","secondary":"#7FD8CF","chart":"#14B8A6","on":"#FFFFFF","abbrev":"CAM","name":"Cambridge Platypuses","url":"teams/cambridge-platypuses-2.html"},"3":{"primary":"#242A31","secondary":"#E0531F","chart":"#F97316","on":"#FFFFFF","abbrev":"DUR","name":"Durham Destroyers","url":"teams/durham-destroyers-3.html"},"4":{"primary":"#1D4F91","secondary":"#7FB2E5","chart":"#3B82F6","on":"#FFFFFF","abbrev":"TOR","name":"Toronto Jays","url":"teams/toronto-jays-4.html"},"5":{"primary":"#8A6508","secondary":"#FFD23F","chart":"#EAB308","on":"#FFFFFF","abbrev":"ITH","name":"Ithaca Thunder","url":"teams/ithaca-thunder-5.html"},"6":{"primary":"#B01818","secondary":"#FF9A9A","chart":"#EF4444","on":"#FFFFFF","abbrev":"GOO","name":"Gooning Gooners","url":"teams/gooning-gooners-6.html"},"7":{"primary":"#6B21A8","secondary":"#D4A5F5","chart":"#A855F7","on":"#FFFFFF","abbrev":"MAN","name":"Manhattan Elephants","url":"teams/manhattan-elephants-7.html"},"8":{"primary":"#15803D","secondary":"#86E5A4","chart":"#22C55E","on":"#FFFFFF","abbrev":"STO","name":"Stony Brook Stingrays","url":"teams/stony-brook-stingrays-8.html"},"9":{"primary":"#455A70","secondary":"#B9C7D6","chart":"#93A9C0","on":"#FFFFFF","abbrev":"QUE","name":"Queens Pigeons","url":"teams/queens-pigeons-9.html"}},"pages":[{"label":"Home","url":"index.html","key":"home"},{"label":"Schedule","url":"schedule.html","key":"schedule"},{"label":"Players","url":"players/index.html","key":"players"},{"label":"League Draft","url":"league-draft.html","key":"league-draft"},{"label":"Free Agency","url":"free-agency.html","key":"free-agency"},{"label":"Draft","url":"draft.html","key":"draft"},{"label":"History","url":"history.html","key":"history"},{"label":"Records","url":"records.html","key":"records"},{"label":"Greatest Games","url":"classics.html","key":"classics"},{"label":"Wrapped","url":"wrapped.html","key":"wrapped"},{"label":"Trade Machine","url":"trade.html","key":"trade"},{"label":"Compare","url":"compare.html","key":"compare"},{"label":"Lineup Lab","url":"lineup.html","key":"lineup"},{"label":"Win-Out Sim","url":"simulator.html","key":"simulator"}],"skills":{"3":"Three-point shooter","A":"Athlete","B":"Ball handler","Di":"Interior defender","Dp":"Perimeter defender","Po":"Post scorer","Ps":"Passer","R":"Rebounder","V":"Volume scorer"}}</script>
+</body>
+</html>
