@@ -192,11 +192,6 @@ a.rd-pick:hover { border-color: var(--team-secondary, var(--accent)); text-decor
 }
 .series-chip:hover { border-color: var(--accent); text-decoration: none; }
 .series-chip.current { border-color: var(--accent); }
-.cmp-table th, .cmp-table td { text-align: center; min-width: 7rem; }
-.cmp-table .cmp-label { color: var(--muted); font-size: .7rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
-.preview-injuries { margin-top: .6rem; }
-.preview-injuries h3 { margin: 0 0 .25rem; letter-spacing: .07em; }
-.preview-injuries p { margin: .15rem 0; }
 
 
 /* ---------- rotation map hover crosshair ---------- */

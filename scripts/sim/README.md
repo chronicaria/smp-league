@@ -15,10 +15,16 @@ node scripts/sim/project_box_scores.mjs league-data/2004_preseason.json --sims 2
 ```
 
 Flags: `--sims` (default 200), `--seed` (default 2004), `--out`. The committed file is
-built at **2000** sims: at 200 the printed tenth of a minute is not stable between seeds,
-and eight of the 180 games swapped favourite. 2000 takes ~10 minutes.
+built at **1000** sims (~5 minutes); 200 is too noisy to print a tenth of a minute from —
+at 200 eight of the 180 games swapped favourite between honest seeds.
+
+Only the ten who dress are handed to the sim. zengm dresses the whole roster; this league
+plays ten, and the two held out are the ones the depth chart's Reserve row names — the
+site's own player-list order (overall desc, then name), not BBGM's `rosterOrder`, which
+disagrees with it on ties for two of the ten teams.
+
 Needs Node 22.18+ (native TypeScript stripping) and a Basketball GM checkout at
-`../zengm`, or `ZENGM_DIR` pointing at one. ~80 s for 180 games × 200 sims.
+`../zengm`, or `ZENGM_DIR` pointing at one. ~85 s for 180 games × 200 sims; ~295 s at 1000.
 
 ## Why zengm's sim
 
@@ -77,7 +83,7 @@ reinstalling `node_modules`, all produced the same sha256.
 `league-data/projected_box_scores.json`, keyed by the export's own gid:
 
 ```
-{ "season": 2004, "sims": 200, "generated_from": "2004_preseason.json",
+{ "season": 2004, "sims": 1000, "generated_from": "2004_preseason.json",
   "games": { "180": {
     "home_tid": 5, "away_tid": 7,
     "home_pts": 105.0, "away_pts": 95.6,      // mean final score
@@ -89,7 +95,7 @@ reinstalling `node_modules`, all produced the same sha256.
 ```
 
 Player figures are means across sims, per game, one decimal (`gs` — the fraction of sims
-he started — to two). Every player on both rosters gets a row even if he never appeared,
+he started — to two). Every DRESSED player gets a row even if he never appeared,
 home team first, then minutes descending; the page decides what to show.
 
 Minutes sum to `numPlayersOnCourt × quarterLength × numPeriods` per team per game, plus

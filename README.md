@@ -74,13 +74,13 @@ node scripts/faces/render.mjs
 ## Projected box scores
 
 Each game preview shows projected minutes and a projected box score per player. They come
-from Basketball GM's *own* game simulation, run 2,000 times per game against the league's
+from Basketball GM's *own* game simulation, run 1,000 times per game against the league's
 2003-04 calibration (`pace` 90.1, `threePointTendencyFactor` 0.488, and a dozen more), so
 the projection agrees with what the game will actually do when the season is played:
 
 ```sh
 cd scripts/sim && npm install
-node scripts/sim/project_box_scores.mjs --sims 2000
+node scripts/sim/project_box_scores.mjs --sims 1000
 ```
 
 Needs Node 22.18+ and a Basketball GM checkout at `../zengm` (or `ZENGM_DIR`). Like the

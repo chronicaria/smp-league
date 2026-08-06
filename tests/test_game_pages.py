@@ -280,9 +280,16 @@ class TestPreviewPages(unittest.TestCase):
         self.assertNotIn("gx-lost", self.html)
         self.assertNotIn("gx-classic", self.html)
 
-    def test_preview_has_matchup_card_and_projected_rosters(self):
-        self.assertIn("Matchup", self.html)
-        self.assertIn("INJURY REPORT", self.html)
+    def test_preview_has_no_matchup_card_or_injury_report(self):
+        # Both were dropped: the projected box score is built from the same two
+        # rosters and states their difference in minutes and points, so a table
+        # of roster averages beside it restated the input to a number already on
+        # the page.
+        self.assertNotIn(">Matchup</h2>", self.html)
+        self.assertNotIn("INJURY REPORT", self.html)
+        self.assertNotIn("cmp-table", self.html)
+
+    def test_preview_has_projected_rosters(self):
         self.assertIn("Projected active rotation", self.html)
         # A preview shows what is known before tip-off -- ratings and each man's
         # projected contribution to the spread -- not an empty box score. It used
@@ -460,7 +467,7 @@ class TestProjectedBoxScores(unittest.TestCase):
     def test_sub_floor_player_is_a_footer_line_not_a_row_of_zeros(self):
         with projection_file(_projection(scrub_minutes=0.4)):
             html = render(self.item, [self.item], 2031)
-        self.assertEqual(html.count("Not projected to play:"), 2)
+        self.assertEqual(html.count("Reserve, not dressed:"), 2)
         for tid in (1, 2):
             roster = game_page.team_roster(tid, PLAYERS)
             scrub = game_page.player_name(roster[-1])
@@ -596,14 +603,17 @@ class TestProjectedHeroAgreement(unittest.TestCase):
             full[line["tid"]] += line["pts"]
         self.assertAlmostEqual(printed - (full[1] - full[2]), 5.0, places=6)
 
-    def test_rotation_total_tooltip_tracks_whichever_model_the_hero_used(self):
+    def test_no_rotation_total_row_to_disagree_with_the_hero(self):
+        # The Matchup card carried a "Rotation total" whose tooltip claimed to be
+        # what the spread was built from — true of the season sim, a lie once the
+        # hero quoted the game sim. The card is gone, so the claim cannot come back.
         with projection_file(_projection()):
             projected = render(self.item, [self.item], 2031)
         with projection_file(None):
             plain = render(self.item, [self.item], 2031)
-        self.assertIn(game_page.esc(game_page.ROTATION_TOTAL_TITLE_PROJECTED), projected)
-        self.assertNotIn(game_page.esc(game_page.ROTATION_TOTAL_TITLE), projected)
-        self.assertIn(game_page.esc(game_page.ROTATION_TOTAL_TITLE), plain)
+        for html in (projected, plain):
+            self.assertNotIn("Rotation total", html)
+            self.assertNotIn("the spread above is built from", html)
 
 
 class TestProjectedFallback(unittest.TestCase):

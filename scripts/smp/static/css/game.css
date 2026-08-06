@@ -226,18 +226,7 @@ a.gx-team-name:hover { text-decoration: underline; }
 .gx-proj-fill-away + .gx-proj-fill-home { border-left: 2px solid var(--panel); }
 .gx-proj-caption { margin: .45rem 0 0; text-align: center; }
 
-/* ---------- gx-rot / gx-matchup-body: the preview's two real panels ---------- */
-/* The comparison table is a fixed ~21rem however wide the card is. Putting the
-   injury report beside it fills the card instead of stranding a screen of empty
-   panel to its right. */
-.gx-matchup-body {
-  display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
-  gap: .6rem 1.5rem;
-  align-items: start;
-}
-.gx-matchup-body .preview-injuries { margin-top: 0; }
-
+/* ---------- gx-rot: the preview's projected rotations ---------- */
 /* Both projected rotations side by side: two short tables read as a comparison,
    and stacked full-width they would repeat the dead space they replaced.
    auto-fit, not repeat(2): a six-column rotation table needs ~34rem before the
@@ -311,8 +300,6 @@ td.gx-pbox-min {
      the track at the table's natural ~550px and scrolled the whole PAGE
      sideways by ~170px on a phone. Zero minimum puts the scrolling back inside
      .table-wrap, where the sticky name column is built for it. */
-  .gx-matchup-body { grid-template-columns: minmax(0, 1fr); }
-  .gx-matchup-body .preview-injuries { margin-top: .3rem; }
   .gx-rots { grid-template-columns: minmax(0, 1fr); }
   .gx-rots .box-team-section { margin-bottom: .25rem; }
 }

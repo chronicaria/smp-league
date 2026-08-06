@@ -23,9 +23,14 @@
 // export's own gameAttributes, hand the rosters to zengm's processTeam(), and run the
 // real GameSim -- the same code path core/game/play.ts uses -- N times per game.
 //
-// The one place we depart from zengm is that we never touch IndexedDB. processTeam is
-// pure for a regular-season basketball game (its only idb access is a playoffs/hockey
-// branch), so a plain object stands in for the database and nothing is persisted.
+// Two places we depart from zengm:
+//
+//  1. We never touch IndexedDB. processTeam is pure for a regular-season basketball game
+//     (its only idb access is a playoffs/hockey branch), so a plain object stands in for
+//     the database and nothing is persisted.
+//  2. Only DRESSED players are handed to the sim. zengm dresses everyone on the roster;
+//     this league dresses ten and holds the last two out, so the 11th and 12th men
+//     project zero minutes rather than the ~6 and ~2 they were getting. See DRESSED.
 //
 // Determinism
 // -----------
@@ -188,6 +193,29 @@ for (const key of CALIBRATION) {
 const season = g.get("season");
 const playersByTid = Map.groupBy(league.players, (p) => p.tid);
 
+// The league dresses ten; the 11th and 12th men are reserve and do not play.
+const DRESSED = 10;
+
+// Which ten dress is decided the same way the site orders a roster everywhere else --
+// overall descending, then name (team.py::_sorted_team_roster). NOT by BBGM's own
+// rosterOrder: the two disagree on ties, and on two of the ten rosters they name a
+// different reserve pair than the depth chart's Reserve row does. The site says out loud
+// who sits, so the projection has to bench those exact two.
+const dressedFor = (tid) => {
+	const roster = [...(playersByTid.get(tid) ?? [])];
+	roster.sort((a, b) => {
+		const ovrA = a.ratings.at(-1).ovr;
+		const ovrB = b.ratings.at(-1).ovr;
+		if (ovrA !== ovrB) {
+			return ovrB - ovrA;
+		}
+		return `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`);
+	});
+	// processTeam re-sorts by rosterOrder, which is what picks the starting five out of
+	// the ten; slicing only decides who is available to it.
+	return roster.slice(0, DRESSED);
+};
+
 const teamTemplates = new Map();
 for (const t of league.teams) {
 	if (t.disabled) {
@@ -214,7 +242,7 @@ for (const t of league.teams) {
 				cid: t.cid,
 				did: t.did,
 			},
-			playersByTid.get(t.tid) ?? [],
+			dressedFor(t.tid),
 		),
 	);
 }
