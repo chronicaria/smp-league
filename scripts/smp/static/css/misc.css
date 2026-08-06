@@ -56,7 +56,7 @@ tr.dead-row > td { opacity: .65; }
   gap: .5rem;
   align-items: center;
   padding: .32rem .55rem;
-  border-bottom: 1px solid rgba(255,255,255,.05);
+  border-bottom: 1px solid var(--rule);
   font-size: .8rem;
   cursor: pointer;
 }
@@ -85,7 +85,11 @@ tr.dead-row > td { opacity: .65; }
 .cmp-players td { text-align: left; }
 .cmp-players .cmp-label { color: var(--muted); font-size: .72rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
 .cmp-best { color: var(--good); font-weight: 700; }
-.cmp-bar { display: inline-block; width: 4.5rem; height: .4rem; margin-right: .5rem; border-radius: .15rem; background: rgba(255,255,255,.07); overflow: hidden; vertical-align: middle; }
+/* Translucent, not an opaque surface token: these bars sit in table rows, and
+   `tbody tr:hover` is var(--panel-3) — an opaque --panel-3 track vanishes the
+   moment you hover the row you are reading. --rule-strong composites over
+   zebra, hover and my-team rows alike, in both themes. */
+.cmp-bar { display: inline-block; width: 4.5rem; height: .4rem; margin-right: .5rem; border-radius: .15rem; background: var(--rule-strong); overflow: hidden; vertical-align: middle; }
 .cmp-bar i { display: block; height: 100%; background: var(--accent); }
 .cmp-best .cmp-bar i { background: var(--good); }
 
@@ -113,7 +117,11 @@ tr.dead-row > td { opacity: .65; }
 .score-stack .recap { width: 100%; line-height: 1.35; }
 
 @media (max-width: 900px) {
-  .nav-search { flex: none; width: 100%; }
+  /* Keep the header a wrapping ROW once the burger takes over. Giving each
+     control its own full-width line stacks brand / search / menu / picker into
+     ~150px of permanently-sticky chrome on a 390px phone. */
+  .site-header { flex-direction: row; align-items: center; }
+  .nav-search { flex: 1 1 9rem; width: auto; }
   .home-columns { grid-template-columns: 1fr; }
   .nav-burger {
     display: inline-flex;

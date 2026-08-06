@@ -643,17 +643,55 @@ def _outro_slide(season: int) -> str:
     )
 
 
+# The deck's running order, as prose. Shown on the pre-champion page so the
+# slot each slide will occupy is legible before any of them can be built; keep
+# in sync with the ``slides`` list in render_wrapped_page.
+_SLIDE_PREVIEW = [
+    ("The season in numbers", "games, points, threes, overtimes and triple-doubles across the year"),
+    ("Fantasy line of the year", "the single best box score anyone posted, playoffs included"),
+    ("The leaders wall", "points, rebounds, assists, steals and blocks"),
+    ("The playoff story", "every series, round by round, with seeds"),
+    ("Your champions", "the banner, the final record and the Finals MVP"),
+]
+
+
 def _empty_state_page(teams: list[dict[str, Any]], season: int) -> str:
+    """The page before any season has finished.
+
+    A one-line "not yet" card left the page 74px tall on an otherwise blank
+    screen. The season is still unplayed, so there is nothing to recap and
+    nothing worth inventing — instead the page states the gate once and then
+    lists the deck it will build, which is the only useful thing it knows.
+    """
+    n_teams = len([t for t in teams if t.get("tid") is not None and not t.get("disabled")])
+    preview = list(_SLIDE_PREVIEW)
+    preview.append((
+        f"{n_teams} team cards" if n_teams else "A card for every team",
+        "record, playoff finish and top performer — each one a downloadable share card",
+    ))
+    rows = "".join(
+        f'<li><span class="wr-preview-name">{esc(name)}</span>'
+        f'<span class="wr-preview-note muted">{esc(note)}</span></li>'
+        for name, note in preview
+    )
     body = f"""
     <section class="page-hero">
       <div>
         <p class="eyebrow">SMP Wrapped</p>
-        <h1>Wrapped isn’t ready yet</h1>
+        <h1>Wrapped ’{str(season)[-2:]} opens when the season closes</h1>
       </div>
+      <div class="muted">{esc(season)} season</div>
     </section>
-    <section class="card">
-      <p class="empty-state">Wrapped covers finished seasons — season {season} hasn’t
-      crowned a champion yet.</p>
+    <section class="card wr-waiting">
+      <p class="empty-state">Wrapped recaps a finished season, and {esc(season)} has not crowned a champion
+      yet. The page rebuilds itself from the export the day the Finals end — nothing here is hand-written.</p>
+      <div class="section-title-row"><h2>The deck it will build</h2></div>
+      <ol class="wr-preview">{rows}</ol>
+      <p class="wr-waiting-links">
+        <a class="button-link" href="index.html">Back to today</a>
+        <a class="button-link" href="schedule.html">The {esc(season)} schedule</a>
+        <a class="button-link" href="history.html">League history</a>
+      </p>
     </section>
     """
     return page_html("SMP Wrapped", body, teams, root="", active="wrapped")

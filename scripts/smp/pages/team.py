@@ -17,6 +17,7 @@ from ..core import (
     ALL_PLAYERS_BY_PID,
     RATING_GROUP_STARTS,
     TEAM_RATING_RANK_KEYS,
+    acquisition_html,
     active_team_ids,
     active_teams_for_season,
     age,
@@ -25,7 +26,11 @@ from ..core import (
     canonical_pos,
     completed_game_items,
     current_season,
+    draft_slot,
+    draft_transaction,
     esc,
+    fmt_contract,
+    fmt_draft_slot,
     fmt_money,
     fmt_number,
     fmt_pct,
@@ -40,6 +45,7 @@ from ..core import (
     get_attr_value,
     heat_style,
     initials,
+    injury_html,
     is_completed_game_item,
     item_team_points,
     latest_rating,
@@ -53,7 +59,6 @@ from ..core import (
     player_name,
     player_url,
     rating_delta_html,
-    roster_row,
     safe_float,
     safe_int,
     season_regular_stat,
@@ -95,15 +100,35 @@ def _fin_mil(amount: float) -> str:
     return f"${amount / 1000:g}M"
 
 
+def _money(amount: Any) -> str:
+    """fmt_money with a sane zero.
+
+    Salaries are stored in thousands and fmt_money switches to a $NNNK label
+    below a million, so exactly zero comes out as "$0K" — which showed up in the
+    hero as "Cap space $0K" for a team sitting exactly on the line, and as the
+    "Now" total of a ledger that has not earned anything yet. Zero is $0."""
+    return "$0" if abs(safe_float(amount)) < 1e-9 else fmt_money(amount)
+
+
 def _cap_rules(data: dict[str, Any] | None, season: int) -> dict[str, Any]:
     """The league's cap rules for ``season``, read straight off gameAttributes so
-    the team pages can never drift from the export: {"cap", "hard", "minimum"}
-    (money in thousands). ``cap`` is 0.0 when the export carries none, which is
-    the signal for the cap cards to render nothing at all."""
+    the team pages can never drift from the export: {"cap", "type", "hard",
+    "enforced", "minimum"} (money in thousands). ``cap`` is 0.0 when the export
+    carries none, which is the signal for the cap cards to render nothing at all.
+
+    ``type`` is Basketball GM's salaryCapType verbatim — "hard", "soft" or
+    "none". SMP II runs "none", so salaryCap is only a reference line (the
+    league-average payroll target the salary curve is built around) and nothing
+    on the page may describe it as a limit; ``enforced`` is the single flag the
+    copy branches on.
+    """
     ga = (data or {}).get("gameAttributes") or {}
+    cap_type = str(get_attr_value(ga.get("salaryCapType"), season) or "")
     return {
         "cap": safe_float(get_attr_value(ga.get("salaryCap"), season), 0.0),
-        "hard": str(get_attr_value(ga.get("salaryCapType"), season) or "") == "hard",
+        "type": cap_type,
+        "hard": cap_type == "hard",
+        "enforced": cap_type in ("hard", "soft"),
         "minimum": safe_float(get_attr_value(ga.get("minContract"), season), 0.0),
     }
 
@@ -261,12 +286,23 @@ def team_games_strip(team: dict[str, Any], game_items: list[dict[str, Any]], tea
         )
     if not chips:
         return ""
-    note = "last 5 · next 5"
+    # The caption has to describe the chips that actually rendered. "last 5 ·
+    # next 5" was printed unconditionally, so a preseason team with nothing but
+    # a schedule advertised five results it did not have.
+    n_back, n_fwd = len(played[-5:]), len(upcoming[:5])
+    bits = []
+    if n_back:
+        bits.append(f"last {n_back}")
+    if n_fwd:
+        bits.append(f"next {n_fwd}")
+    note = " · ".join(bits)
     if season is not None and played and not upcoming:
         played_seasons = {safe_int(item.get("season")) for item in played}
         if season not in played_seasons:
             latest = max(played_seasons)
-            note = f"final 5 games of {latest} · no {season} games yet"
+            note = f"final {n_back} games of {latest} · no {season} games yet"
+    elif season is not None and not played:
+        note = f"first {n_fwd} games of {season} · none played yet"
     return f"""
     <section class="card">
       <div class="section-title-row"><h2>Form &amp; Upcoming</h2><span class="muted small-copy">{esc(note)}</span></div>
@@ -292,6 +328,12 @@ def team_games_table(team: dict[str, Any], game_items: list[dict[str, Any]], tea
     involved.sort(key=game_sort_key)
     if not involved:
         return ""
+    completed_count = sum(1 for item in involved if is_completed_game_item(item))
+    # Before the first tip-off every Result cell reads "Upcoming" and every Note
+    # cell reads "Scheduled" — two full columns of the same word, 36 rows deep.
+    # They carry information the moment one game is final, so the columns come
+    # back on their own rather than on a season check.
+    show_result = completed_count > 0
     rows = []
     for item in involved:
         home = safe_int(item.get("home_tid")) == tid
@@ -312,19 +354,21 @@ def team_games_table(team: dict[str, Any], game_items: list[dict[str, Any]], tea
         margin = (safe_float(team_pts) - safe_float(opp_pts)) if completed else -999
         note = game_recap_text(item, teams_by_tid) if completed else "Scheduled"
         cls = "game-log-win" if result.startswith("W") else "game-log-loss" if result.startswith("L") else "game-log-next"
+        cells = [
+            td(fmt_number(item.get("day"), 0), sort=safe_int(item.get("day"))),
+            td(opp_cell, sort=team_abbrev_for_tid(opp_tid, teams_by_tid), cls="name-cell"),
+        ]
+        if show_result:
+            cells.append(td(result_cell, sort=margin))
+            cells.append(td(esc(note), sort=note, cls="game-note"))
+        cells.append(td(f'<a class="button-link table-link" href="{esc(game_url(item, "../"))}">'
+                        f'{"View" if completed else "Preview"}</a>', sort=safe_int(item.get("day"))))
         rows.append(
             f'<tr class="click-row {cls}" data-href="{esc(game_url(item, "../"))}">'
-            + "".join([
-                td(fmt_number(item.get("day"), 0), sort=safe_int(item.get("day"))),
-                td(opp_cell, sort=team_abbrev_for_tid(opp_tid, teams_by_tid), cls="name-cell"),
-                td(result_cell, sort=margin),
-                td(esc(note), sort=note, cls="game-note"),
-                td(f'<a class="button-link table-link" href="{esc(game_url(item, "../"))}">View</a>', sort=safe_int(item.get("day"))),
-            ])
+            + "".join(cells)
             + "</tr>"
         )
-    completed_count = sum(1 for item in involved if is_completed_game_item(item))
-    headers = ["Day", "Opponent", "Result", "Note", "Link"]
+    headers = ["Day", "Opponent", "Result", "Note", "Link"] if show_result else ["Day", "Opponent", "Link"]
     if display_season == season:
         title = "All Games"
         note = f"{completed_count} completed · {len(involved) - completed_count} upcoming"
@@ -333,10 +377,14 @@ def team_games_table(team: dict[str, Any], game_items: list[dict[str, Any]], tea
         title = f"{display_season} Season Log"
         note = f"no {season} games yet · full {display_season} log ({completed_count} games)"
         caption = f"{team_full_name(team)} {display_season} season game log"
+    # A three-column fixture list stretched over a full-width card leaves the
+    # opponent floating in the middle of nowhere; shrink-wrap it left the way
+    # every other narrow table on the site does.
+    wrap_cls = "" if show_result else "fit-table"
     return f"""
     <section class="card">
       <div class="section-title-row"><h2>{esc(title)}</h2><span class="muted small-copy">{esc(note)}</span></div>
-      {table_html(headers, rows, table_id=f"team-{tid}-games", empty_message="No games found.", caption=caption)}
+      {table_html(headers, rows, table_id=f"team-{tid}-games", empty_message="No games found.", caption=caption, wrap_cls=wrap_cls)}
     </section>
     """
 
@@ -431,16 +479,25 @@ def _injury_cross(player: dict[str, Any]) -> str:
 DEPTH_STAT_KEYS = [("pts", "PTS"), ("trb", "REB"), ("ast", "AST"), ("stl", "STL"), ("blk", "BLK")]
 
 
-def _depth_stat_line(player: dict[str, Any], season: int, start_season: int) -> str:
-    """PTS/REB/AST/STL/BLK per-game chips from the player's latest season with
-    games played (0-GP rows skipped); an em-dash line when he has none."""
+def _depth_played_stat(player: dict[str, Any], season: int, start_season: int) -> dict[str, Any]:
+    """The player's latest regular-season line that has games in it, or {}.
+
+    Split out of _depth_stat_line so the card and the card's legend read the same
+    data: in year one nothing qualifies for anybody, and the legend has to know
+    that before it promises per-game numbers the cards cannot show."""
     played = {
         s["season"] for s in player.get("stats") or []
         if isinstance(s, dict) and not s.get("playoffs")
         and isinstance(s.get("season"), int) and start_season <= s["season"] <= season
         and stat_gp(s) > 0
     }
-    stat = season_regular_stat(player, max(played)) if played else {}
+    return season_regular_stat(player, max(played)) if played else {}
+
+
+def _depth_stat_line(player: dict[str, Any], season: int, start_season: int) -> str:
+    """PTS/REB/AST/STL/BLK per-game chips from the player's latest season with
+    games played (0-GP rows skipped); an em-dash line when he has none."""
+    stat = _depth_played_stat(player, season, start_season)
     gp = stat_gp(stat)
     bits = []
     for key, label in DEPTH_STAT_KEYS:
@@ -461,18 +518,21 @@ def _depth_card(player: dict[str, Any], slot: str, season: int, start_season: in
     the two differ the label gets a dotted underline and names his real position
     on hover (title) — chosen over a printed marker because it keeps the row
     scannable while never letting the chart claim a center is a shooting guard.
+    A title attribute reaches nobody who is not holding a mouse, so the same
+    correction is repeated for screen readers inside the card's link text.
     """
     rating = latest_rating(player, season)
     natural = canonical_pos(player, rating)
     pos_cls = "depth-pos" if natural == slot else "depth-pos depth-pos--fitted"
     pos_tip = "" if natural == slot else f' title="Natural position: {natural}"'
+    pos_sr = "" if natural == slot else f'<span class="sr-only"> (natural position {natural})</span>'
     jersey = player.get("jerseyNumber")
     jersey_bit = f'<span class="depth-num">#{esc(jersey)}</span>' if jersey not in (None, "") else ""
     return (
         f'<a class="depth-card" href="{player_url(player, "../")}">'
         f'<span class="depth-portrait-wrap">{_roundel(player, "depth-portrait", "../")}</span>'
         '<span class="depth-main">'
-        f'<span class="depth-card-top"><span class="{pos_cls}"{pos_tip}>{slot}</span>'
+        f'<span class="depth-card-top"><span class="{pos_cls}"{pos_tip}>{slot}{pos_sr}</span>'
         f'<span class="depth-ovr" title="Overall rating">{esc(rating.get("ovr", "—"))}</span></span>'
         f'<span class="depth-id"><span class="depth-name">{esc(player_name(player))}</span>{_injury_cross(player)}{jersey_bit}</span>'
         f"{_depth_stat_line(player, season, start_season)}"
@@ -493,6 +553,19 @@ def depth_chart_card(roster: list[dict[str, Any]], season: int, start_season: in
     out to five, and a short roster simply stops when the players run out.
     """
     ordered = _sorted_team_roster(roster, season)
+    # The caption is a legend, so it may only name markers the cards actually
+    # carry. In preseason no player has a played season and nobody is hurt, so
+    # the old fixed string promised "per-game from latest season played" over
+    # twelve cards of em-dashes and a "✚ injured" key for a cross that appears
+    # nowhere — and on a phone it wrapped to three lines to do it. Both clauses
+    # are now conditional on the roster, so they return the moment they mean
+    # something.
+    has_stats = any(_depth_played_stat(p, season, start_season) for p in ordered)
+    has_injury = any(_injury_cross(p) for p in ordered)
+    legend = ["top 5 / next 5 / last 2 by overall", "each row fitted to PG–C"]
+    legend.append("per-game from latest season played" if has_stats else "no games played yet")
+    if has_injury:
+        legend.append("✚ injured")
     rows_html = []
     taken = 0
     for label, size in DEPTH_ROWS:
@@ -510,7 +583,7 @@ def depth_chart_card(roster: list[dict[str, Any]], season: int, start_season: in
         )
     return f"""
     <section class="card depth-chart-card">
-      <div class="section-title-row"><h2>Depth Chart</h2><span class="muted small-copy">top 5 / next 5 / last 2 by overall · each row fitted to PG–C · per-game from latest season played · ✚ injured</span></div>
+      <div class="section-title-row"><h2>Depth Chart</h2><span class="muted small-copy">{esc(" · ".join(legend))}</span></div>
       <div class="depth-rows">{''.join(rows_html)}</div>
     </section>
     """
@@ -1051,15 +1124,62 @@ def franchise_seasons(team: dict[str, Any], data: dict[str, Any], teams: list[di
     return out
 
 
-def franchise_arc_card(team: dict[str, Any], data: dict[str, Any], teams: list[dict[str, Any]], teams_by_tid: dict[int, dict[str, Any]]) -> str:
+def _first_season(team: dict[str, Any], data: dict[str, Any] | None) -> int | None:
+    """Earliest season the franchise has a row for — its founding year as far as
+    the export is concerned. Falls back to the current season for a team the
+    export has not written a seasons row for yet."""
+    seasons = [s.get("season") for s in (team.get("seasons") or []) if isinstance(s, dict)]
+    seasons = [s for s in seasons if isinstance(s, int)]
+    if seasons:
+        return min(seasons)
+    return current_season(data) if data else None
+
+
+def _franchise_file_tiles(team: dict[str, Any], roster: list[dict[str, Any]], data: dict[str, Any] | None) -> str:
+    """The charter facts a franchise has before it has played anything: the year
+    it started, how many of the current roster it drafted, and its colors."""
+    tid = safe_int(team.get("tid"), -1)
+    ident = team_identity(tid)
+    tiles = []
+    born = _first_season(team, data)
+    if born is not None:
+        tiles.append(_tile("First season", esc(born)))
+    drafted = [p for p in roster if draft_transaction(p)]
+    if drafted:
+        tiles.append(_tile("Drafted", f"{len(drafted)} of {len(roster)}",
+                           tip="Players on the roster this franchise took at a league draft, "
+                               "rather than signing or trading for."))
+    # The tile's whole value is two colour chips, so the hex has to be readable
+    # by something other than a mouse pointer: title alone leaves the tile empty
+    # for a screen reader and unreachable from the keyboard.
+    swatches = "".join(
+        f'<span class="tm-swatch" role="img" style="background:{esc(ident[key])}" '
+        f'title="{esc(label)} {esc(ident[key])}" aria-label="{esc(label)} {esc(ident[key])}"></span>'
+        for key, label in (("primary", "Primary"), ("secondary", "Secondary"))
+    )
+    tiles.append(_tile("Colors", f'<span class="tm-swatches">{swatches}</span>'))
+    return f'<div class="vitals-row">{"".join(tiles)}</div>'
+
+
+def franchise_arc_card(team: dict[str, Any], data: dict[str, Any], teams: list[dict[str, Any]], teams_by_tid: dict[int, dict[str, Any]], roster: list[dict[str, Any]] | None = None) -> str:
     """C26: the W/L ribbon — wins up, losses down, playoff exits and title flags
-    along the top."""
+    along the top.
+
+    Before the franchise has finished a season there is no ribbon to draw, and a
+    bare "nothing here" line left the whole History page 200px tall. The empty
+    branch instead says what the chart will be and carries the facts that DO
+    exist in year one — founding season, colors, how much of the roster the
+    franchise drafted itself."""
     rows = franchise_seasons(team, data, teams)
     if not rows:
+        cur = current_season(data)
+        year = f" the day {cur} is in the books" if isinstance(cur, int) else " once a season is played out"
         return f"""
     <section class="card">
-      <div class="section-title-row"><h2>Franchise Arc</h2></div>
-      <p class="empty-state">No completed seasons yet — the arc starts once real games are played.</p>
+      <div class="section-title-row"><h2>Franchise Arc</h2><span class="muted small-copy">nothing on the board yet</span></div>
+      <p class="empty-state">No completed seasons yet — the wins-and-losses ribbon, the playoff exit over
+      each column and the title flags all start filling in{esc(year)}.</p>
+      {_franchise_file_tiles(team, roster or [], data)}
     </section>"""
     n = len(rows)
     max_wl = max(max(r["won"], r["lost"]) for r in rows) or 1
@@ -1141,20 +1261,96 @@ def season_results_card(team: dict[str, Any], data: dict[str, Any], teams: list[
     </section>"""
 
 
-def hero_cap_chip(tfin: dict[str, Any] | None, cap: float, season: int) -> str:
+def redraft_board_card(roster: list[dict[str, Any]], season: int, root: str = "../") -> str:
+    """The franchise's own draft board: everyone still on the roster that this
+    team drafted, in the order it called their names.
+
+    Year one is the reason this exists. A franchise with no seasons behind it
+    has exactly one piece of history — the draft that built it — and the roster
+    page only shows the slot as a right-hand "Acquired" note sorted by overall
+    rating, which is the wrong axis to read a draft on. It keeps earning its
+    place afterwards: players who arrive by trade or free agency are simply not
+    on the board, so the card shrinks as the original squad is broken up.
+    """
+    picks = []
+    for player in roster:
+        tx = draft_transaction(player)
+        if not tx:
+            continue
+        overall = safe_int(tx.get("pickNum"), 0)
+        picks.append({
+            "player": player,
+            "overall": overall if overall > 0 else 10 ** 6,
+            "slot": fmt_draft_slot(draft_slot(player)),
+            "season": safe_int(tx.get("season"), 0),
+        })
+    if not picks:
+        return ""
+    picks.sort(key=lambda p: (p["overall"], player_name(p["player"])))
+    seasons = sorted({p["season"] for p in picks if p["season"]})
+    title = f"{seasons[0]} Redraft" if len(seasons) == 1 else "Redraft Board"
+
+    tiles = []
+    for pick in picks:
+        player = pick["player"]
+        rating = latest_rating(player, season)
+        ovr = rating.get("ovr")
+        meta = " · ".join(str(bit) for bit in (
+            rating.get("pos") or "", age(player, season), f"{ovr} ovr" if ovr is not None else "",
+        ) if bit not in ("", None))
+        slot = pick["slot"] or f"#{pick['overall']}"
+        tiles.append(
+            f'<a class="rd-pick" href="{player_url(player, root)}">'
+            f'<span class="rd-slot">{esc(slot)}</span>'
+            '<span class="rd-body">'
+            f'<span class="rd-name">{esc(player_name(player))}</span>'
+            f'<span class="rd-meta">{esc(meta)}</span>'
+            "</span></a>"
+        )
+    others = len(roster) - len(picks)
+    if others > 0:
+        foot = (f'{others} other player{"" if others == 1 else "s"} on the roster arrived by trade '
+                "or free agency.")
+    else:
+        foot = f"Every player on the roster came from the {seasons[0]} redraft." if seasons else ""
+    foot_html = f'<p class="muted small-copy">{esc(foot)}</p>' if foot else ""
+    return f"""
+    <section class="card">
+      <div class="section-title-row"><h2>{esc(title)}</h2><span class="muted small-copy">{len(picks)} pick{"" if len(picks) == 1 else "s"} still on the roster · board order</span></div>
+      <div class="redraft-board">{''.join(tiles)}</div>
+      {foot_html}
+    </section>"""
+
+
+def hero_cap_chip(tfin: dict[str, Any] | None, cap: float, season: int, enforced: bool = True) -> str:
     """Hero chip: payroll against the league-average target. With no cap the only money number
     that constrains a roster is the room left under the line, so that is what
-    every team subpage carries in the hero instead of a revenue projection."""
+    every team subpage carries in the hero instead of a revenue projection.
+
+    ``enforced`` is False when gameAttributes reports salaryCapType "none": the
+    line is then a benchmark rather than a ceiling and the tooltip has to say
+    so. The visible labels stay the ones the league-wide finances table uses for
+    the same number, so the two pages read as one league.
+    """
     if not tfin or not cap:
         return ""
     payroll = tfin["payroll"]
     room = cap - payroll
     label = "Cap space" if room >= 0 else "Over the cap by"
-    cls = "delta-up" if room >= 0 else "delta-down"
+    # Exactly on the line is not good news, so $0 stays the plain text colour
+    # (Queens open 2004 at $100M on the nose and read "Cap space $0" in green).
+    cls = "delta-up" if room > 0 else "delta-down" if room < 0 else ""
+    cls_attr = f' class="{cls}"' if cls else ""
+    room_tip = (
+        f"Room under the {fmt_money(cap)} cap. A team at the cap can only add players at the league minimum."
+        if enforced else
+        f"Payroll against the {fmt_money(cap)} league-average line. There is no salary cap — this is the "
+        "benchmark the salary curve is built around, not a limit on what a team may sign."
+    )
     return f"""
     <div class="hero-finance">
-      <div class="hero-fin-row" title="{season} player salaries plus dead money and retained salary."><span>{season} payroll</span><strong>{fmt_money(payroll)}</strong></div>
-      <div class="hero-fin-row" title="Room under the {fmt_money(cap)} cap. A team at the cap can only add players at the league minimum."><span>{label}</span><strong class="{cls}">{fmt_money(abs(room))}</strong></div>
+      <div class="hero-fin-row" title="{season} player salaries plus dead money and retained salary."><span>{season} payroll</span><strong>{_money(payroll)}</strong></div>
+      <div class="hero-fin-row" title="{esc(room_tip)}"><span>{label}</span><strong{cls_attr}>{_money(abs(room))}</strong></div>
     </div>"""
 
 
@@ -1329,6 +1525,7 @@ def team_hero_html(team: dict[str, Any], season: int, sorted_roster: list[dict[s
     if streak != "—":
         bits.append(streak)
     bits.append(f"{len(sorted_roster)} players")
+    rules = _cap_rules(data, season)
     return f"""
     <section class="page-hero team-hero">
       <span class="tm-watermark" aria-hidden="true">{esc(abbrev)}</span>
@@ -1338,23 +1535,22 @@ def team_hero_html(team: dict[str, Any], season: int, sorted_roster: list[dict[s
         <h1>{esc(team_full_name(team))}</h1>
         <p class="muted">{' · '.join(bits)}</p>
       </div>
-      {hero_cap_chip(tfin, _cap_rules(data, season)["cap"], season)}
+      {hero_cap_chip(tfin, rules["cap"], season, enforced=rules["enforced"])}
     </section>"""
 
 
 def finance_ledger_card(tfin: dict[str, Any] | None, year: int, cap: float | None = None) -> str:
     """Revenue ledger: win payouts + playoff bonuses + adjustments = net revenue.
 
-    Under a HARD cap this ledger is a scoreboard, not a spending account. A per-win
-    revenue model has a ~2x spread between the best and worst team while the cap is a
-    flat ceiling, so a good team's net revenue legitimately exceeds $100M -- money it
-    can never legally spend. Reporting that as a "budget surplus" contradicted the cap
-    space shown on the same page (measured: 10 of 10 teams disagreed, average gap
-    ~$11M). So the last tile reports what the team can ACTUALLY spend, which is
-    whichever of revenue and cap room binds first -- and says which one that is.
+    This ledger is a scoreboard, not a spending account. A per-win revenue model has a
+    ~2x spread between the best and worst team, so what a team banks and what it can
+    responsibly commit are different numbers; reporting net revenue as a "budget
+    surplus" contradicted the payroll figures on the same page (measured: 10 of 10
+    teams disagreed, average gap ~$11M). So the last tile reports what the team can
+    ACTUALLY spend -- next season's revenue less the salaries already committed.
 
-    No luxury-tax line: Basketball GM assesses no tax at all when salaryCapType
-    is "hard", so a tax row and a tax-distribution row could only ever read $0."""
+    No luxury-tax line: Basketball GM assesses no tax when salaryCapType is anything
+    other than "soft", so a tax row and a tax-distribution row could only ever read $0."""
     if not tfin:
         return ""
     f = tfin
@@ -1363,8 +1559,8 @@ def finance_ledger_card(tfin: dict[str, Any] | None, year: int, cap: float | Non
         cls_attr = f' class="{cls}"' if cls else ""
         return f'<tr{cls_attr}><td class="ledger-label">{label}</td><td class="ledger-num">{now}</td><td class="ledger-num">{proj}</td></tr>'
 
-    budget_now = f'<strong>{fmt_money(f["net_revenue_now"])}</strong>'
-    budget_proj = f'<strong>{fmt_money(f["net_revenue_proj"])}</strong>'
+    budget_now = f'<strong>{_money(f["net_revenue_now"])}</strong>'
+    budget_proj = f'<strong>{_money(f["net_revenue_proj"])}</strong>'
     rows = [
         row(f'Win payouts <span class="muted small-copy">({_fin_mil(FIN_PER_WIN)} × W)</span>',
             f'{fmt_money_pm(f["win_rev_now"])} <span class="muted small-copy">({f["won"]} W)</span>',
@@ -1391,11 +1587,11 @@ def finance_ledger_card(tfin: dict[str, Any] | None, year: int, cap: float | Non
            f"revenue is the only limit on what you can add.")
 
     tiles = "".join([
-        _tile(f"{year - 1} payroll", fmt_money(f["payroll"]),
+        _tile(f"{year - 1} payroll", _money(f["payroll"]),
               tip="This season's player salaries plus dead money and retained salary."),
         _tile("Season balance", fmt_money_pm(bal), cls=bc,
               tip="Projected net revenue minus this season's payroll. League average is about $0 by design."),
-        _tile(f"Committed {year} payroll", fmt_money(committed),
+        _tile(f"Committed {year} payroll", _money(committed),
               tip=f"Salaries already on the books for {year}, incl. dead money and retained salary."),
         _tile(f"Spendable in {year}", fmt_money_pm(spendable),
               cls="delta-up" if spendable >= 0 else "delta-down", tip=tip),
@@ -1414,11 +1610,13 @@ def finance_ledger_card(tfin: dict[str, Any] | None, year: int, cap: float | Non
 
 
 def cap_sheet_card(tfin: dict[str, Any] | None, data: dict[str, Any] | None, season: int, roster_size: int, league_fin: dict[str, Any]) -> str:
-    """Cap sheet: payroll against the cap, room left, and roster spots filled.
+    """Cap sheet: payroll against the cap line, room left, and roster spots filled.
 
     This is what the old Luxury Tax card became. SMP II has no cap and no tax, so the
     live questions are simply what the team is spending and how that compares with the
-    league-average target the salary curve is calibrated against."""
+    league-average target the salary curve is calibrated against — and the prose has
+    to branch on ``_cap_rules(...)["enforced"]`` so it never states a rule the export
+    does not carry."""
     if not tfin:
         return ""
     rules = _cap_rules(data, season)
@@ -1427,20 +1625,41 @@ def cap_sheet_card(tfin: dict[str, Any] | None, data: dict[str, Any] | None, sea
         return ""
     payroll = tfin["payroll"]
     room = cap - payroll
+    enforced = rules["enforced"]
     max_roster = safe_int(get_attr_value((data or {}).get("gameAttributes", {}).get("maxRosterSize"), season))
-    tiles = [_tile("Payroll", fmt_money(payroll),
+    tiles = [_tile("Payroll", _money(payroll),
                    tip="Full-season player salaries plus dead money and retained salary.")]
+    line = "cap" if enforced else "league-average line"
     if room >= 0:
-        tiles.append(_tile("Cap space", fmt_money(room), cls="delta-up",
-                           tip=f"Room below the {fmt_money(cap)} cap."))
+        # Green means "there is room". A team sitting exactly on the line has
+        # none, so $0 is reported in the plain text colour rather than as good news.
+        tiles.append(_tile("Cap space", _money(room), cls="delta-up" if room > 0 else "",
+                           tip=f"Room below the {fmt_money(cap)} {line}."))
     else:
-        tiles.append(_tile("Over the cap by", fmt_money(-room), cls="delta-down",
-                           tip=f"Payroll above the {fmt_money(cap)} cap — this roster is not legal."))
+        over_tip = (f"Payroll above the {fmt_money(cap)} cap — this roster is not legal."
+                    if enforced else
+                    f"Payroll above the {fmt_money(cap)} league-average line. Legal — there is no cap — "
+                    "but the overspend has to be covered by what the team earns.")
+        tiles.append(_tile("Over the cap by", _money(-room), cls="delta-down", tip=over_tip))
     if max_roster:
         tiles.append(_tile("Roster", f"{roster_size} / {max_roster}",
                            tip=f"Rosters are locked at {max_roster} players."))
-    cap_type = "league average" if not rules["hard"] else "hard cap"
-    if room < 0:
+    cap_type = {"hard": "hard cap", "soft": "soft cap"}.get(rules["type"], "league average")
+    # The card subtitle used cap_type too, so an uncapped league got "league
+    # average $100M" in the header and "the 10 teams are actually paying $96.9M
+    # on average" in the body — the same contradiction, one line apart. $100M is
+    # the target the salary curve is calibrated to, not the observed average.
+    subtitle = f"{cap_type} {fmt_money(cap)}" if enforced else f"league-average target {fmt_money(cap)}"
+    # Every claim below is branched on whether the export actually enforces a
+    # cap. It used to print hard-cap rules unconditionally ("this roster is not
+    # legal", "every signing has to land under $100M") on a league whose
+    # salaryCapType is "none" — directly contradicting the How Finances Work
+    # card two cards further down the same page.
+    if not enforced:
+        note = (f"There is no salary cap and no luxury tax: {fmt_money(cap)} is the league-average "
+                "payroll target the salary curve is built around, and revenue is the only real limit "
+                "on what a team can add.")
+    elif room < 0:
         note = f"Payroll is over the {cap_type} — this roster cannot be submitted as-is."
     elif rules["minimum"] and room < rules["minimum"]:
         note = f"Capped out: with less than the {fmt_money(rules['minimum'])} minimum in space, this team cannot add a player at all."
@@ -1448,10 +1667,15 @@ def cap_sheet_card(tfin: dict[str, Any] | None, data: dict[str, Any] | None, sea
         note = f"No Bird rights and no exceptions — every signing, re-signing and trade has to land under {fmt_money(cap)}."
     payrolls = [t["payroll"] for t in (league_fin.get("teams") or {}).values()]
     if payrolls:
-        note += f" League average payroll is {fmt_money(sum(payrolls) / len(payrolls))}."
+        # "League average payroll is $96.9M" landing straight after "$100M is the
+        # league-average target" read as a contradiction. One is the calibration
+        # line, the other is what the ten teams are actually paying — say so.
+        actual = fmt_money(sum(payrolls) / len(payrolls))
+        note += (f" The {len(payrolls)} teams are actually paying {actual} on average."
+                 if not enforced else f" League average payroll is {actual}.")
     return f"""
     <section class="card">
-      <div class="section-title-row"><h2>Cap Sheet</h2><span class="muted small-copy">{esc(cap_type)} {fmt_money(cap)}</span></div>
+      <div class="section-title-row"><h2>Cap Sheet</h2><span class="muted small-copy">{esc(subtitle)}</span></div>
       <div class="vitals-row">{"".join(tiles)}</div>
       <p class="muted small-copy">{note}</p>
     </section>"""
@@ -1511,6 +1735,55 @@ def _age_sort(player: dict[str, Any], season: int) -> int | None:
     return (season - yr) if isinstance(yr, int) else None
 
 
+def _rate_cell(value: float | None, gp: float, digits: int = 1) -> str:
+    """A per-game cell that dashes out when the player has not played.
+
+    ``per_game`` returns 0.0 at 0 GP, so the naive cell prints "0.0" for an
+    average nobody has recorded — in preseason that is the entire Stats table,
+    twelve rows of numbers a visitor reads as real. BPM, TS% and ORtg in the
+    same row already print an em-dash because their inputs are missing; this
+    makes the counting averages agree with them. The sort key is dropped with
+    the value so the blanks group together instead of sorting as zero.
+    """
+    if gp <= 0 or value is None:
+        return td("—")
+    return td(fmt_number(value, digits), sort=value)
+
+
+def roster_stats_row(player: dict[str, Any], season: int, start_season: int, root: str, teams_by_tid: dict[int, dict[str, Any]]) -> str:
+    """The default roster row: identity, contract, health, per-game line, BPM.
+
+    A local copy of core.roster_row rather than a call to it, because the
+    per-game columns have to dash out at 0 GP (see _rate_cell) and every other
+    caller of that helper is on this page anyway.
+    """
+    rating = latest_rating(player, season)
+    stat = latest_regular_stat(player, start_season, season)
+    gp = stat_gp(stat)
+    trb = (safe_float(stat.get("orb")) + safe_float(stat.get("drb"))) / gp if gp > 0 else None
+    has_bpm = stat.get("obpm") is not None or stat.get("dbpm") is not None
+    bpm = (safe_float(stat.get("obpm")) + safe_float(stat.get("dbpm"))) if has_bpm else None
+    last_tx = ((player.get("transactions") or [{}])[-1] or {}).get("season")
+    return "".join([
+        td(player_link(player, root), sort=player_name(player), cls="name-cell"),
+        td(esc(rating.get("pos", "—")), sort=rating.get("pos", "")),
+        td(age(player, season), sort=_age_sort(player, season)),
+        td(rating_delta_html(player, "ovr", rating), sort=rating.get("ovr")),
+        td(rating_delta_html(player, "pot", rating), sort=rating.get("pot")),
+        td(fmt_contract(player), sort=(player.get("contract") or {}).get("amount")),
+        td(injury_html(player), sort=(player.get("injury") or {}).get("gamesRemaining") or 0),
+        td(fmt_number(gp, 0), sort=gp),
+        _rate_cell(per_game(stat, "min"), gp),
+        _rate_cell(per_game(stat, "pts"), gp),
+        _rate_cell(trb, gp),
+        _rate_cell(per_game(stat, "ast"), gp),
+        _rate_cell(per_game(stat, "stl"), gp),
+        _rate_cell(per_game(stat, "blk"), gp),
+        td(fmt_signed(bpm, 1) if bpm is not None else "—", sort=bpm),
+        td(acquisition_html(player, teams_by_tid or {}), sort=last_tx),
+    ])
+
+
 def roster_advanced_row(player: dict[str, Any], season: int, start_season: int, root: str) -> str:
     rating = latest_rating(player, season)
     stat = latest_regular_stat(player, start_season, season)
@@ -1526,7 +1799,7 @@ def roster_advanced_row(player: dict[str, Any], season: int, start_season: int, 
         td(esc(rating.get("pos", "—")), sort=rating.get("pos", "")),
         td(age(player, season), sort=_age_sort(player, season)),
         td(fmt_number(gp, 0), sort=gp),
-        td(fmt_number(per_game(stat, "min"), 1), sort=per_game(stat, "min")),
+        _rate_cell(per_game(stat, "min"), gp),
         td(fmt_number(ts * 100, 1) if ts is not None else "—", sort=ts),
         td(fmt_number(efg * 100, 1) if efg is not None else "—", sort=efg),
         td(fmt_number(stat.get("ortg"), 1), sort=stat.get("ortg")),
@@ -1571,31 +1844,50 @@ def roster_tabs(sorted_roster: list[dict[str, Any]], season: int, start_season: 
     # can be hidden by unchecking the "show inactive" toggle (shown by default:
     # the full roster is the honest view). The Ratings view always shows the
     # full roster (ratings are real for everyone).
-    zero_gp = {safe_int(p.get("pid"), -1) for p in sorted_roster
-               if stat_gp(latest_regular_stat(p, start_season, season)) <= 0}
-    if len(zero_gp) == len(sorted_roster):
-        zero_gp = set()  # everyone is 0 GP (expansion roster): hiding all would lie harder
+    never_played = {safe_int(p.get("pid"), -1) for p in sorted_roster
+                    if stat_gp(latest_regular_stat(p, start_season, season)) <= 0}
+    # Nobody on the roster has played: dimming or hiding the whole squad would
+    # lie harder than showing it, and Stats/Advanced have nothing in them, so
+    # Ratings opens instead. Both decisions read off the roster's own game logs,
+    # so the page reverts on its own the day the first box score lands.
+    all_idle = len(never_played) == len(sorted_roster) and bool(sorted_roster)
+    zero_gp = set() if all_idle else never_played
 
     def stat_tr(p: dict[str, Any], cells: str) -> str:
         cls = ' class="inactive-row"' if safe_int(p.get("pid"), -1) in zero_gp else ""
         return f"<tr{cls}>{cells}</tr>"
 
-    stats_rows = [stat_tr(p, roster_row(p, season, start_season, root, teams_by_tid)) for p in sorted_roster]
+    stats_rows = [stat_tr(p, roster_stats_row(p, season, start_season, root, teams_by_tid)) for p in sorted_roster]
     adv_rows = [stat_tr(p, roster_advanced_row(p, season, start_season, root)) for p in sorted_roster]
     rat_headers: list = ["Name", "Pos", "Age", "Ovr", "Pot"]
     for key, label in TEAM_RATING_RANK_KEYS:
         rat_headers.append((label, "group-start" if key in RATING_GROUP_STARTS else ""))
     rat_rows = [roster_ratings_row(p, season, root, ranges) for p in sorted_roster]
 
-    def tab(tid: str, label: str, first: bool) -> str:
-        return (f'<button type="button" class="{"active" if first else ""}" role="tab" id="tab-{tid}" '
-                f'aria-controls="panel-{tid}" aria-selected="{"true" if first else "false"}" '
-                f'tabindex="{"0" if first else "-1"}" data-tab-target="panel-{tid}">{esc(label)}</button>')
+    open_tab = "rrat" if all_idle else "rstats"
 
-    inactive_toggle = ""
-    if zero_gp:
+    def tab(tid: str, label: str) -> str:
+        on = tid == open_tab
+        return (f'<button type="button" class="{"active" if on else ""}" role="tab" id="tab-{tid}" '
+                f'aria-controls="panel-{tid}" aria-selected="{"true" if on else "false"}" '
+                f'tabindex="{"0" if on else "-1"}" data-tab-target="panel-{tid}">{esc(label)}</button>')
+
+    def panel(tid: str, body: str) -> str:
+        hide = "" if tid == open_tab else " hidden"
+        return (f'<div id="panel-{tid}" role="tabpanel" aria-labelledby="tab-{tid}" '
+                f"data-tab-panel{hide}>{body}</div>")
+
+    note = ""
+    if all_idle:
+        # "Stats and Advanced stay empty" overstated it: those views still carry
+        # position, age, ovr/pot, contract, health and how the player was
+        # acquired. What is blank is every column fed by a box score.
+        note = ('<p class="muted small-copy">No games played yet — every per-game and advanced '
+                'column stays blank until the first box score. Ratings, contracts and health '
+                'are current.</p>')
+    elif zero_gp:
         n = len(zero_gp)
-        inactive_toggle = (
+        note = (
             '<label class="inactive-toggle small-copy">'
             '<input type="checkbox" data-toggle-inactive checked> '
             f'Show inactive — {n} player{"" if n == 1 else "s"} with 0 GP</label>'
@@ -1604,18 +1896,12 @@ def roster_tabs(sorted_roster: list[dict[str, Any]], season: int, start_season: 
     <section class="card" data-roster-card>
       <div class="section-title-row"><h2>Players</h2><span class="muted small-copy">{len(sorted_roster)} players · sortable</span></div>
       <div class="tabs" role="tablist" aria-label="Roster stat views" data-tabs>
-        {tab("rstats", "Stats", True)}{tab("radv", "Advanced", False)}{tab("rrat", "Ratings", False)}
+        {tab("rstats", "Stats")}{tab("radv", "Advanced")}{tab("rrat", "Ratings")}
       </div>
-      {inactive_toggle}
-      <div id="panel-rstats" role="tabpanel" aria-labelledby="tab-rstats" data-tab-panel>
-        {table_html(stats_headers, stats_rows, table_id="roster-stats", empty_message="No players found.", wrap_cls="fit-table", pos_filter=True)}
-      </div>
-      <div id="panel-radv" role="tabpanel" aria-labelledby="tab-radv" data-tab-panel hidden>
-        {table_html(adv_headers, adv_rows, table_id="roster-advanced", empty_message="No players found.", wrap_cls="fit-table", pos_filter=True)}
-      </div>
-      <div id="panel-rrat" role="tabpanel" aria-labelledby="tab-rrat" data-tab-panel hidden>
-        {table_html(rat_headers, rat_rows, table_id="roster-ratings", empty_message="No players found.", wrap_cls="fit-table", pos_filter=True)}
-      </div>
+      {note}
+      {panel("rstats", table_html(stats_headers, stats_rows, table_id="roster-stats", empty_message="No players found.", wrap_cls="fit-table", pos_filter=True))}
+      {panel("radv", table_html(adv_headers, adv_rows, table_id="roster-advanced", empty_message="No players found.", wrap_cls="fit-table", pos_filter=True))}
+      {panel("rrat", table_html(rat_headers, rat_rows, table_id="roster-ratings", empty_message="No players found.", wrap_cls="fit-table", pos_filter=True))}
     </section>"""
 
 
@@ -1701,12 +1987,14 @@ def render_team_history_page(team: dict[str, Any], roster: list[dict[str, Any]],
     title flags, event pins, and the season-by-season results table."""
     teams_by_tid = {int(t.get("tid")): t for t in teams if t.get("tid") is not None}
     sorted_roster = _sorted_team_roster(roster, season)
-    arc = franchise_arc_card(team, data, teams, teams_by_tid) if data else ""
+    arc = franchise_arc_card(team, data, teams, teams_by_tid, roster=sorted_roster) if data else ""
     results = season_results_card(team, data, teams) if data else ""
+    board = redraft_board_card(sorted_roster, season)
     body = f"""
     {team_hero_html(team, season, sorted_roster, teams, tfin, data=data)}
     {team_subnav(team, "history")}
     {arc}
     {results}
+    {board}
     """
     return page_html(f"{team_full_name(team)} — Franchise Arc", team_scope_html(team, body), teams, root="../", active=f"team-{team.get('tid')}")

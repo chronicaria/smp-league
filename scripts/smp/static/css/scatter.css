@@ -46,7 +46,7 @@
   transition: border-color .12s ease, opacity .12s ease;
 }
 .chart-legend button:hover { border-color: color-mix(in srgb, var(--dot, var(--accent)) 65%, var(--line)); }
-.chart-legend button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chart-legend button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .chart-legend button .dot { width: .58rem; height: .58rem; border-radius: 50%; background: var(--dot, var(--muted)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 20%, transparent); }
 .chart-legend button.off { opacity: .38; }
 .chart-legend button.off .dot { background: var(--muted); }

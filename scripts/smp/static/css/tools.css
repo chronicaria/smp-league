@@ -1,5 +1,11 @@
 /* ---------- tools.css — Lineup Lab (ll-) + Win-Out Machine (wo-) ---------- */
 .tool-note { font-size: .78rem; margin: .2rem 0 .6rem; }
+/* A note is a subtitle for the heading above it, not the next block down, so it
+   sits closer than the heading's own .5rem bottom margin. (The two margins
+   collapse rather than add, so the -.2rem is what pulls it in, not a correction
+   for double spacing.) */
+.section-title-row + .tool-note,
+.card > h2 + .tool-note { margin-top: -.2rem; }
 
 /* Lineup Lab */
 .ll-head { align-items: center; }
@@ -90,6 +96,17 @@
 .ll-option .muted { font-size: .72rem; white-space: nowrap; }
 .ll-option:hover, .ll-option.selected { background: var(--panel-2); }
 .ll-pick { margin-top: .4rem; min-height: 1.5rem; font-size: .78rem; display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+/* An unfilled slot renders as a lone muted word ("Empty slot" / "League-average
+   fill"). On a page where all five start unfilled that read as five failures
+   rather than five invitations, so the placeholder gets a dashed well that
+   matches .empty-state and occupies the space a real pick will. */
+.ll-pick > .muted:only-child {
+  flex: 1 1 auto;
+  padding: .12rem .4rem;
+  border: 1px dashed var(--line);
+  border-radius: .15rem;
+  font-size: .74rem;
+}
 .ll-pick-meta { color: var(--muted); }
 .ll-pick-meta strong { color: var(--text); }
 .ll-chip { font-size: .72rem; padding: .08rem .5rem; }
@@ -124,9 +141,46 @@
 }
 .ll-bar i { display: block; height: 100%; background: var(--accent); }
 
+/* The field: server-rendered opponents, shown while the matchup board is empty
+   and dropped the moment lineup.js has a real table to put there. */
+[data-ll-matchups]:has(table) + .ll-field { display: none; }
+.ll-field-title { margin: .1rem 0 .45rem; }
+/* One or two columns only: ten teams split evenly either way, where three or
+   five columns would strand a row and squeeze the club names to ellipses. */
+.ll-field-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0 1.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 700px) { .ll-field-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ll-field-row {
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .55rem;
+  padding: .3rem 0;
+  border-top: 1px solid var(--line);
+}
+.ll-field-row .ll-chip { justify-content: center; text-decoration: none; }
+.ll-field-row .ll-chip:hover { text-decoration: none; filter: brightness(1.12); }
+.ll-field-name {
+  font-size: .82rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ll-field-ovr { font-size: .95rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
 /* Win-Out Machine */
 .wo-layout { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: .75rem; align-items: start; }
-@media (max-width: 1050px) { .wo-layout { grid-template-columns: 1fr; } }
+/* minmax(0, 1fr), never a bare 1fr: a bare 1fr track floors at min-content, and
+   the board's min-content is ~600px (a game row is a matchup label + a 3-way
+   segmented control + a win-probability hint). At 375px that pushed the whole
+   page 226px wide and gave every phone a sideways scroll. */
+@media (max-width: 1050px) { .wo-layout { grid-template-columns: minmax(0, 1fr); } }
 .wo-board-tools { display: flex; align-items: center; gap: .6rem; font-size: .72rem; }
 .wo-reset {
   padding: .3rem .7rem;

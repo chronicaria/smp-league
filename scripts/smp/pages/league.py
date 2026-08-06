@@ -36,6 +36,7 @@ from ..core import (
     game_slug_from_gid,
     game_url,
     game_winner_tid,
+    get_attr_value,
     heat_style,
     inferred_upcoming_schedule_season,
     initials,
@@ -397,6 +398,26 @@ def fa_market_is_priced(bids: list[float]) -> bool:
     return len({round(bid, 6) for bid in bids}) > 1
 
 
+def fa_market_separates_top(bids: list[float]) -> bool:
+    """Does the top of this market cost visibly more than the floor?
+
+    ``fa_market_is_priced`` decides whether the Asking column exists at all, and it is
+    deliberately generous: even a bunched market is worth a column, because "everybody
+    costs the minimum" is a real fact about a pool of 196 players and no open roster
+    spots. This is the stricter question, and it governs presentation rather than data.
+
+    In SMP II's preseason the whole pool prices between $1.00M and $1.04M. Printing that
+    as eight identical accent chips across Top of the Market, under hero copy calling it
+    a Monte Carlo valuation, dresses a flat number up as a finding. So the chips and the
+    valuation sentence wait until the model actually spreads the market -- SMP I's 2031
+    board runs $1M to $50M and clears this by a mile.
+    """
+    if not bids:
+        return False
+    floor = min(bids)
+    return floor > 0 and max(bids) >= 1.5 * floor
+
+
 def free_agent_row(player: dict[str, Any], season: int, root: str, rating_ranges: dict[str, tuple[float, float]], show_bid: bool = True) -> str:
     rating = latest_rating(player, season)
     born = (player.get("born") or {}).get("year")
@@ -438,7 +459,9 @@ def render_free_agency_page(players: list[dict[str, Any]], teams: list[dict[str,
                 values.append(float(value))
         rating_ranges[key] = (min(values), max(values)) if values else (0.0, 0.0)
 
-    show_bids = fa_market_is_priced([fa_asking_price(p, season) for p in sorted_players])
+    all_bids = [fa_asking_price(p, season) for p in sorted_players]
+    show_bids = fa_market_is_priced(all_bids)
+    spread_market = show_bids and fa_market_separates_top(all_bids)
 
     headers: list = ["Name", "Pos", "Age", "Ovr", "Pot"]
     if show_bids:
@@ -454,7 +477,7 @@ def render_free_agency_page(players: list[dict[str, Any]], teams: list[dict[str,
         meta_bits = [rating.get("pos") or "—", f"{age(p, season)} yr",
                      f"{rating.get('ovr', '—')} ovr / {rating.get('pot', '—')} pot"]
         ask_chip = ""
-        if show_bids:
+        if spread_market:
             term = fa_asking_term(p, season)
             ask_chip = (f'<span class="fa-card-ask" title="Asking price{" — " + term if term else ""}">'
                         f'{fmt_money(fa_asking_price(p, season))}</span>')
@@ -469,7 +492,7 @@ def render_free_agency_page(players: list[dict[str, Any]], teams: list[dict[str,
         )
     fa_card_strip = ""
     if fa_cards:
-        strip_note = "best available by overall · chip = asking price" if show_bids else "best available by overall"
+        strip_note = "best available by overall · chip = asking price" if spread_market else "best available by overall"
         fa_card_strip = f"""
     <section class="card">
       <div class="section-title-row"><h2>Top of the Market</h2><span class="muted small-copy">{strip_note}</span></div>
@@ -477,15 +500,31 @@ def render_free_agency_page(players: list[dict[str, Any]], teams: list[dict[str,
     </section>
     """
 
-    # With every ask clamped to the same minimum, a Starting Bid column is a wall of one
-    # number, so the page says why it is missing instead of printing a false precision.
-    hero_note = (
-        "Asking price is the player's own priced contract — the annual salary the league values "
-        "him at, from a Monte Carlo projection of his ratings over the length of the deal."
-        if show_bids else
-        "Ranked by overall. Asking prices are held back this year — the salary model still puts most of "
-        "this market at the league minimum, so a bid column would print one number down the whole board."
-    )
+    # Three states, because the market has three. Priced and spread: explain the model.
+    # Priced but bunched at the floor: say that, rather than describing a valuation the
+    # numbers do not show. Unpriced: say why the column is missing at all.
+    if spread_market:
+        hero_note = ("Asking price is the player's own priced contract — the annual salary the league values "
+                     "him at, from a Monte Carlo projection of his ratings over the length of the deal.")
+    elif show_bids:
+        floor = fmt_money(min(all_bids))
+        hero_note = (f"Ranked by overall. Asking price is each player's own priced contract, but almost all of this "
+                     f"market prices at the {floor} league minimum — Thru, the season a deal would run to, is where "
+                     f"the offers actually differ.")
+    else:
+        hero_note = ("Ranked by overall. Asking prices are held back this year — the salary model still puts most of "
+                     "this market at the league minimum, so a bid column would print one number down the whole board.")
+    # core.free_agents hides anyone under 50 in BOTH overall and potential, so this board
+    # counts 196 where players/index.html counts 343 and neither page said why. The site
+    # should not print two different sizes for the same pool without accounting for the
+    # gap. `all_players` was already passed in and never read; this is what it is for.
+    hidden_note = ""
+    if all_players:
+        unlisted = sum(1 for p in all_players if p.get("tid") == FREE_AGENT_TID) - len(sorted_players)
+        if unlisted > 0:
+            hidden_note = (f'<p class="muted small-copy">{unlisted} more unsigned players rate under 50 in both '
+                           f'overall and potential and are left off this board; the '
+                           f'<a href="players/index.html">Players page</a> lists every one.</p>')
     body = f"""
     <section class="page-hero">
       <div>
@@ -497,6 +536,7 @@ def render_free_agency_page(players: list[dict[str, Any]], teams: list[dict[str,
     {fa_card_strip}
     <section class="card">
       <div class="section-title-row"><h2>Available Players</h2><span class="count-pill">{len(sorted_players)}</span></div>
+      {hidden_note}
       <div class="toolbar">
         <input class="table-search" data-table-filter="free-agents" placeholder="Filter free agents…" aria-label="Filter free agents">
       </div>
@@ -525,6 +565,21 @@ def render_players_index(players: list[dict[str, Any]], teams: list[dict[str, An
     def group_rating(p: dict[str, Any], group: str) -> dict[str, Any]:
         # Prospects only carry their draft-class ratings row; everyone else uses this season's.
         return latest_rating(p) if group == "draft" else latest_rating(p, season)
+
+    def group_age(p: dict[str, Any], group: str) -> int:
+        """Age in the season this row's ratings describe, not always today.
+
+        Same correction league.prospect_row makes on the draft page, which this table
+        had never picked up: the export stamps a future prospect's ratings and height at
+        his draft season, so measuring his age from 2004 contradicts every other cell on
+        the row -- the 2013 class listed Giannis Antetokounmpo at ten years old with a
+        51 overall. Rostered players and free agents are aged from the current season.
+        """
+        if group == "draft":
+            draft_year = (p.get("draft") or {}).get("year")
+            if isinstance(draft_year, int):
+                return draft_year
+        return season
 
     rating_ranges: dict[str, tuple[float, float]] = {}
     for key, _ in TEAM_RATING_RANK_KEYS:
@@ -562,11 +617,13 @@ def render_players_index(players: list[dict[str, Any]], teams: list[dict[str, An
             team_cell = td(f'<span class="muted">{esc(label)}</span>', sort=draft_year if isinstance(draft_year, int) else "Draft")
         else:
             team_cell = td(team_label(p.get("tid"), teams_by_tid, "../"), sort=team_label(p.get("tid"), teams_by_tid, as_link=False))
+        age_season = group_age(p, group)
+        born_year = (p.get("born") or {}).get("year")
         cells = [
             td(player_link(p, "../", show_number=False), sort=player_name(p), cls="name-cell"),
             team_cell,
             td(esc(rating.get("pos", "—")), sort=rating.get("pos", "")),
-            td(age(p, season), sort=(season - (p.get("born") or {}).get("year", season) if isinstance((p.get("born") or {}).get("year"), int) else None)),
+            td(age(p, age_season), sort=(age_season - born_year if isinstance(born_year, int) else None)),
             td(rating_delta_html(p, "ovr", rating), sort=rating.get("ovr")),
             td(rating_delta_html(p, "pot", rating), sort=rating.get("pot")),
             td(fmt_number(gp, 0), sort=gp),
@@ -697,6 +754,24 @@ def render_players_index(players: list[dict[str, Any]], teams: list[dict[str, An
       <p class="muted small-copy">Dot size tracks minutes · legend chips toggle teams · click a dot to open the player</p>
     </section>
     <script type="application/json" id="player-chart-data">{payload_json}</script>
+    """
+
+    # Every scatter axis is a per-game or advanced stat, so before a single game the card
+    # renders as a 640px black rectangle reading "No data for this combination" -- six
+    # controls, a ten-chip team legend and an empty canvas, all of it above the table
+    # people came for. Say what the tool is and when it opens instead, in a tenth of the
+    # height, and skip the payload nobody can plot.
+    if not chart_players:
+        chart_card = f"""
+    <section class="card">
+      <div class="section-title-row"><h2>Scatter</h2><span class="muted small-copy">opens with the first box score</span></div>
+      <div class="lg-empty">
+        <p class="lg-empty-title">No {season} games have been played.</p>
+        <p class="muted">The scatter plots any two of {len(SCATTER_METRICS)} per-game and advanced stats against each other,
+        colored by team and filtered by position and minutes. Ratings do not need a box score — every player below
+        already carries his, under the Ratings view.</p>
+      </div>
+    </section>
     """
 
     body = f"""
@@ -1145,38 +1220,72 @@ def _odds_pct(pct: float) -> str:
     return "—"
 
 
-def projected_lottery_html(data: dict[str, Any], teams: list[dict[str, Any]], season: int, draft_year: int) -> str:
-    palette = team_palette_by_tid(teams)
-    teams_by_tid = {int(t.get("tid")): t for t in teams if t.get("tid") is not None}
+def team_games_played(team: dict[str, Any], season: int) -> int:
+    """Games this team has played in ``season``, for exports with and without ``gp``.
+
+    BBGM teamSeasons rows do not reliably carry a ``gp`` field -- the archived SMP I
+    exports have none at all -- so a "has anyone played yet?" test written on ``gp``
+    answered *no* for a finished 45-game season and reordered its draft board off the
+    sim. Fall back to won + lost, and ignore a stale row from an earlier season.
+    """
+    row = latest_team_season(team, season) or {}
+    if safe_int(row.get("season"), season) != season:
+        return 0
+    return safe_int(row.get("gp")) or (safe_int(row.get("won")) + safe_int(row.get("lost")))
+
+
+def projected_pick_order(data: dict[str, Any], teams: list[dict[str, Any]], season: int, draft_year: int) -> tuple[list[int], dict[int, tuple[float, float]], str, bool]:
+    """(pick order worst-first, tid -> (#1 slot %, top-3 %), what ordered it, any games played).
+
+    Both cards on a draft panel slot teams from this, so Projected Draft Order and Mock
+    Draft cannot disagree about who picks first. They used to: the lottery re-ordered
+    itself for the preseason case below and the mock did not, so at 1440px the two tables
+    sat side by side handing the first pick to different teams.
+
+    Before any games are played every team is 0-0, standings_order falls back to an
+    arbitrary tiebreak, and the slot column contradicts the odds column beside it
+    (measured in preseason: the team slotted 2nd held the league's *lowest* #1 odds).
+    With no results to reverse, the projection the page actually believes is the sim, so
+    order by that instead -- worst projected team picks first. ``order`` runs best team
+    first and the best team is the one least likely to land the #1 slot, hence the
+    ascending sort before the reversal.
+    """
     active = active_teams_for_season(teams, season)
     order = standings_order(active, season)
     # Simulated slot odds apply only to the upcoming draft (this season's finish).
     slot_odds: dict[int, tuple[float, float]] = {}
     if draft_year == season:
-        sim = league_sim(data, teams, season)
+        sim = league_sim(data, teams, season)  # cached per season, so both callers are free
         n = len(order)
         for tid, o in (sim.get("teams") or {}).items():
             seeds = o.get("seeds") or []
             if len(seeds) == n:
                 p1 = seeds[n - 1]
                 top3 = sum(seeds[n - 3:])
-                slot_odds[tid] = (100 * p1, 100 * top3)
+                slot_odds[safe_int(tid)] = (100 * p1, 100 * top3)
 
-    # Before any games are played every team is 0-0, so standings_order falls back to an
-    # arbitrary tiebreak and the slot column ends up contradicting the odds column beside
-    # it (measured in preseason: the team slotted 2nd held the league's *lowest* #1 odds).
-    # With no results to reverse, the projection the page actually believes is the sim, so
-    # order by it instead -- worst projected team picks first.
-    # `order` runs best team first (reverse_order below is the pick order), and the best
-    # team is the one least likely to land the #1 slot -- so sort ascending by those odds.
-    if slot_odds and not any(safe_int((latest_team_season(t, season) or {}).get("gp")) for t in active):
+    played = any(team_games_played(t, season) for t in active)
+    if slot_odds and not played:
         order = sorted(order, key=lambda tid: slot_odds.get(tid, (0.0, 0.0))[0])
-    reverse_order = list(reversed(order))
+        source = f"order from the simulated {season} finish"
+    else:
+        source = "reverse of current standings"
+    return list(reversed(order)), slot_odds, source, played
+
+
+def projected_lottery_html(data: dict[str, Any], teams: list[dict[str, Any]], season: int, draft_year: int) -> str:
+    palette = team_palette_by_tid(teams)
+    teams_by_tid = {int(t.get("tid")): t for t in teams if t.get("tid") is not None}
+    reverse_order, slot_odds, source, played = projected_pick_order(data, teams, season, draft_year)
     picks = [dp for dp in data.get("draftPicks", []) if isinstance(dp, dict) and dp.get("season") == draft_year]
     owner_by_slot: dict[tuple[int, int], int] = {}
     for dp in picks:
         owner_by_slot[(safe_int(dp.get("round")), safe_int(dp.get("originalTid"), -10))] = safe_int(dp.get("tid"), -10)
     rounds = sorted({safe_int(dp.get("round")) for dp in picks}) or [1, 2]
+    # Two columns that say the same thing in every row are worse than one: "Owned by"
+    # only earns its width once a pick has actually changed hands, and "(0-0)" ten times
+    # over is not a record column. Both appear the moment there is something to show.
+    traded = any(owner_by_slot.get((rnd, tid), tid) != tid for rnd in rounds for tid in reverse_order)
     rows = []
     pick_no = 0
     for rnd in rounds:
@@ -1187,18 +1296,20 @@ def projected_lottery_html(data: dict[str, Any], teams: list[dict[str, Any]], se
             owner_team = teams_by_tid.get(owner_tid, {})
             team_season = latest_team_season(slot_team, season)
             record = fmt_record(team_season.get("won"), team_season.get("lost"))
-            if owner_tid == slot_tid:
-                owner_html = f'{team_dot(owner_tid, palette)}{team_anchor(owner_team)}'
-            else:
-                owner_html = (
-                    f'{team_dot(owner_tid, palette)}{team_anchor(owner_team)} '
-                    f'<span class="badge badge-good" title="Acquired via trade">via {esc(team_abbrev(slot_team))}</span>'
-                )
+            record_html = f' <span class="muted small-copy">({esc(record)})</span>' if played else ""
             cells = [
                 td(pick_no, sort=pick_no),
-                td(f'{team_dot(slot_tid, palette)}{team_anchor(slot_team)} <span class="muted small-copy">({esc(record)})</span>', sort=team_full_name(slot_team), cls="name-cell"),
-                td(owner_html, sort=team_full_name(owner_team), cls="name-cell"),
+                td(f'{team_dot(slot_tid, palette)}{team_anchor(slot_team)}{record_html}', sort=team_full_name(slot_team), cls="name-cell"),
             ]
+            if traded:
+                if owner_tid == slot_tid:
+                    owner_html = f'{team_dot(owner_tid, palette)}{team_anchor(owner_team)}'
+                else:
+                    owner_html = (
+                        f'{team_dot(owner_tid, palette)}{team_anchor(owner_team)} '
+                        f'<span class="badge badge-good" title="Acquired via trade">via {esc(team_abbrev(slot_team))}</span>'
+                    )
+                cells.append(td(owner_html, sort=team_full_name(owner_team), cls="name-cell"))
             if slot_odds:
                 p1, top3 = slot_odds.get(slot_tid, (0.0, 0.0))
                 cells.append(td(_odds_pct(p1), sort=p1, style=seed_cell_style(p1)))
@@ -1206,11 +1317,15 @@ def projected_lottery_html(data: dict[str, Any], teams: list[dict[str, Any]], se
             rows.append(f'<tr data-tid="{owner_tid}">{"".join(cells)}</tr>')
     if not rows:
         return ""
-    headers = ["Pick", "Slot (record)", "Owned by"]
-    note = "reverse of current standings · green badge = traded pick"
+    headers = ["Pick", "Slot (record)" if played else "Slot"]
+    note_bits = [source]
+    if traded:
+        headers.append("Owned by")
+        note_bits.append("green badge = traded pick")
     if slot_odds:
         headers += ["#1 slot %", "Top-3 %"]
-        note = "reverse of current standings · simulated slot odds · green badge = traded pick"
+        note_bits.insert(1, "simulated slot odds")
+    note = " · ".join(note_bits)
     return f"""
     <section class="card home-section">
       <div class="section-title-row"><h2>Projected Draft Order</h2><span class="muted small-copy">{note}</span></div>
@@ -1253,10 +1368,15 @@ def draft_class_panel(data: dict[str, Any], teams: list[dict[str, Any]], season:
         {mock_draft_card(data, teams, season, draft_year, class_prospects)}
       </div>"""
     else:
+        # "no standings yet to slot a board from" was only true in the preseason, and it
+        # was the wrong reason even then: a 2013 board is unslottable because the picks
+        # belong to seasons nobody has played, not because this season's table is empty.
+        # The season the class is drafted in is the honest answer, and it stays true once
+        # 2004 has a standings page.
         away = draft_year - season
         note = (f'<span class="muted small-copy">'
                 f'{"next year’s class" if away == 1 else f"{away} drafts out"}'
-                f' · no standings yet to slot a board from</span>')
+                f' · no board until the {draft_year} season sets the order</span>')
     return f"""
     <div id="draft-panel-{draft_year}" role="tabpanel" aria-labelledby="draft-tab-{draft_year}" data-draft-panel="{draft_year}"{hidden_attr}>{overview}
       <section class="card">
@@ -1274,7 +1394,8 @@ def draft_class_panel(data: dict[str, Any], teams: list[dict[str, Any]], season:
 def mock_draft_card(data: dict[str, Any], teams: list[dict[str, Any]], season: int, draft_year: int, class_prospects: list[dict[str, Any]]) -> str:
     palette = team_palette_by_tid(teams)
     teams_by_tid = {int(t.get("tid")): t for t in teams if t.get("tid") is not None}
-    order = list(reversed(standings_order(active_teams_for_season(teams, season), season)))
+    # Same order the Projected Draft Order card prints -- the two sit side by side.
+    order, _odds, _source, _played = projected_pick_order(data, teams, season, draft_year)
     picks = [dp for dp in data.get("draftPicks", []) if isinstance(dp, dict) and dp.get("season") == draft_year and safe_int(dp.get("round")) == 1]
     owner_by_slot = {safe_int(dp.get("originalTid"), -10): safe_int(dp.get("tid"), -10) for dp in picks}
     board = sorted(
@@ -1446,7 +1567,9 @@ def render_draft_page(data: dict[str, Any], teams: list[dict[str, Any]], season:
     span = str(draft_years[0]) if len(draft_years) == 1 else f"{draft_years[0]}–{draft_years[-1]}"
     hero_note = f"{len(draft_years)} classes, {span} · each sorted by potential"
     if draft_years[-1] > season:
-        hero_note += f" · pick slots come from current standings, so the board is drawn for the {season} draft only"
+        # Don't restate *where* the slots come from here -- the panel's own cards do, and
+        # in a 0-0 preseason it isn't the standings. Say only which class has a board.
+        hero_note += f" · only the {season} class has a projected board; the rest are prospect lists"
     body = f"""
     <section class="page-hero">
       <div>
@@ -1547,6 +1670,66 @@ def transactions_archive_html(data: dict[str, Any], teams: list[dict[str, Any]])
     """
 
 
+def league_format_rows(data: dict[str, Any], teams: list[dict[str, Any]]) -> str:
+    """The league's own settings as label/value pairs, read from gameAttributes.
+
+    Year one has no history to show, but the shape of the competition is already decided
+    and is worth printing: it is the thing a reader on an empty History page actually
+    wants to know. Every value comes out of the export, so a rules change shows up here
+    on the next build instead of going stale in prose.
+    """
+    ga = data.get("gameAttributes") or {}
+    season = current_season(data)
+    active = [t for t in active_teams_for_season(teams, season) if not t.get("disabled")]
+    items: list[tuple[str, str]] = [("Teams", str(len(active)))]
+
+    games = regular_season_length(data, season)
+    if games:
+        items.append(("Regular season", f"{games} games"))
+
+    series = get_attr_value(ga.get("numGamesPlayoffSeries"), season)
+    if isinstance(series, list) and series:
+        byes = safe_int(get_attr_value(ga.get("numPlayoffByes"), season))
+        field = 2 ** len(series) - byes
+        lengths = sorted({safe_int(n) for n in series})
+        length_text = f"best-of-{lengths[0]}" if len(lengths) == 1 else "/".join(f"best-of-{n}" for n in lengths)
+        items.append(("Playoffs", f"{field} teams, {length_text}"))
+
+    roster = safe_int(get_attr_value(ga.get("maxRosterSize"), season))
+    if roster:
+        items.append(("Rosters", f"{roster} men"))
+
+    return "".join(
+        f'<div class="detail-item"><span>{esc(label)}</span><strong>{esc(value)}</strong></div>'
+        for label, value in items
+    )
+
+
+def history_year_one_html(data: dict[str, Any], teams: list[dict[str, Any]]) -> str:
+    """Stand-in for the whole History page before a single game has been played.
+
+    What was here was a 90px card reading "No completed seasons yet." -- true, but it
+    made the page not worth loading. Everything below is either a league setting read
+    out of the export or a fact about this site's own structure; nothing is invented.
+    """
+    season = current_season(data)
+    return f"""
+    <section class="card home-section">
+      <div class="section-title-row"><h2>Year One</h2><span class="muted small-copy">nothing to recap yet</span></div>
+      <div class="lg-empty">
+        <p class="lg-empty-title">No {season} games have been played.</p>
+        <p class="muted">This page is written by results. Each completed season adds a champion and runner-up, its
+        Finals MVP and MVP, the award winners and All-League teams, the playoff bracket, and that year's block of the
+        transaction log. The Rafters — a championship pennant per franchise, empty slots included — appear with the
+        first title.</p>
+        <p class="muted">SMP I, the league this one replaced, is archived separately — none of its champions, awards
+        or records carry into SMP II.</p>
+      </div>
+      <div class="details-grid lg-format-grid">{league_format_rows(data, teams)}</div>
+    </section>
+    """
+
+
 def render_history_page(data: dict[str, Any], teams: list[dict[str, Any]]) -> str:
     teams_by_tid = {int(t.get("tid")): t for t in teams if t.get("tid") is not None}
     all_players_by_pid = {safe_int(p.get("pid")): p for p in data.get("players", []) if p.get("pid") is not None}
@@ -1602,18 +1785,30 @@ def render_history_page(data: dict[str, Any], teams: list[dict[str, Any]]) -> st
         </section>
         """)
 
+    # The gold-star legend explains a treatment that only exists inside season cards, so
+    # in year one it annotates nothing; and a Champions table whose only content is its
+    # own empty message is replaced outright by the year-one card.
+    if seasons:
+        hero_note = ('Champions, awards, and brackets · <span class="led-league" title="Gold marks a stat that '
+                     'led the league that season">gold ★</span> = led the league')
+        champions_card = f"""
+    <section class="card home-section">
+      <div class="section-title-row"><h2>Champions</h2></div>
+      {table_html(["Season", "Champion", "Runner-up", "Finals MVP", "MVP"], summary_rows, table_id="champions", empty_message="No completed seasons yet.")}
+    </section>"""
+    else:
+        hero_note = "Champions, awards, and brackets, season by season"
+        champions_card = history_year_one_html(data, teams)
+
     body = f"""
     <section class="page-hero">
       <div>
         <h1>League History</h1>
-        <p class="muted">Champions, awards, and brackets · <span class="led-league" title="Gold marks a stat that led the league that season">gold ★</span> = led the league</p>
+        <p class="muted">{hero_note}</p>
       </div>
     </section>
     {rafters_strip_html(data, teams)}
-    <section class="card home-section">
-      <div class="section-title-row"><h2>Champions</h2></div>
-      {table_html(["Season", "Champion", "Runner-up", "Finals MVP", "MVP"], summary_rows, table_id="champions", empty_message="No completed seasons yet.")}
-    </section>
+    {champions_card}
     {''.join(season_cards)}
     {transactions_archive_html(data, teams)}
     """
@@ -1636,7 +1831,19 @@ def all_time_leaders_html(data: dict[str, Any], teams: list[dict[str, Any]], roo
             continue
         totals.append((player, combined))
     if not totals:
-        return ""
+        # Records & Feats promises leaderboards in its own hero, so dropping the section
+        # entirely leaves the page saying it has something it never shows. One honest
+        # panel naming the boards costs less height than the ten empty ones would.
+        return f"""
+    <section class="card home-section">
+      <div class="section-title-row"><h2>All-Time Leaders</h2><span class="muted small-copy">regular season since {start_season}</span></div>
+      <div class="lg-empty">
+        <p class="lg-empty-title">No career totals yet.</p>
+        <p class="muted">Career and per-game top tens for points, rebounds, assists, steals and blocks, counting
+        every regular-season game from {start_season} on and keeping retired players on the board.</p>
+      </div>
+    </section>
+    """
 
     def box(title, value_fn, digits=0, per_game=False, min_gp=0):
         scored = []
@@ -1809,21 +2016,45 @@ def render_records_page(data: dict[str, Any], teams: list[dict[str, Any]], seaso
       </div>"""
         for i, yr in enumerate(feat_seasons)
     )
+
+    # With nothing on record league-wide, a season tab strip over one season, a filter box
+    # over nothing and a legend for a gold star that appears nowhere are all furniture for
+    # content that does not exist. Print the thresholds instead: what the site counts as a
+    # feat is real reference information, and it is exactly what will fill this card.
+    feats_legend = ('<span class="muted small-copy"><span class="led-league" title="Gold marks the best single-game '
+                    'total of that season">gold ★</span> = season\'s best single-game total</span>')
+    feats_body = f"""<div class="tabs" role="tablist" aria-label="Feats by season" data-tabs>
+        {feat_tabs}
+      </div>
+      {feat_panels}"""
+    if not total_feats:
+        feats_legend = '<span class="muted small-copy">nothing on record yet</span>'
+        lead = (f"No {season} games have been played."
+                if not data.get("games") else "Nothing has cleared the bar yet.")
+        feats_body = f"""<div class="lg-empty">
+        <p class="lg-empty-title">{lead}</p>
+        <p class="muted">A feat is logged automatically for a 50-point game, a triple-double or quadruple-double, a
+        5&times;5, 25 rebounds, 20 assists, or ten threes, blocks or steals in one night. Each one lands here with a
+        link to its box score.</p>
+      </div>"""
+
+    # Never quote the count when it is zero: "and 0 notable single-game performances"
+    # reads as a rendering bug rather than as an honest empty league.
+    hero_note = (f"All-time leaderboards and {total_feats} notable single-game performances" if total_feats
+                 else f"Career leaderboards and single-game feats. Nothing here fills in until the first "
+                      f"{season} box score.")
     body = f"""
     <section class="page-hero">
       <div>
         <h1>Records &amp; Feats</h1>
-        <p class="muted">All-time leaderboards and {total_feats} notable single-game performances</p>
+        <p class="muted">{hero_note}</p>
       </div>
     </section>
     {best_performances_card(data, teams, season)}
     {all_time_leaders_html(data, teams, start_season=start_season)}
     <section class="card">
-      <div class="section-title-row"><h2>Single-Game Feats</h2><span class="muted small-copy"><span class="led-league" title="Gold marks the best single-game total of that season">gold ★</span> = season's best single-game total</span></div>
-      <div class="tabs" role="tablist" aria-label="Feats by season" data-tabs>
-        {feat_tabs}
-      </div>
-      {feat_panels}
+      <div class="section-title-row"><h2>Single-Game Feats</h2>{feats_legend}</div>
+      {feats_body}
     </section>
     """
     return page_html("Records", body, teams, root="", active="records")

@@ -1,7 +1,7 @@
 /* ---------- tables ---------- */
 .table-wrap { overflow-x: auto; border-radius: .15rem; border: 1px solid var(--line); }
 table { width: 100%; border-collapse: collapse; background: var(--panel); font-size: .8rem; }
-th, td { padding: .32rem .55rem; border-bottom: 1px solid rgba(255,255,255,.05); text-align: right; white-space: nowrap; }
+th, td { padding: .32rem .55rem; border-bottom: 1px solid var(--rule); text-align: right; white-space: nowrap; }
 th:first-child, td:first-child { text-align: left; position: sticky; left: 0; z-index: 2; }
 td:first-child { background: inherit; }
 th:first-child { z-index: 4; }
@@ -21,10 +21,18 @@ thead th {
 }
 table[data-sortable] thead th { cursor: pointer; }
 table[data-sortable] thead th:hover { color: var(--text); }
-table[data-sortable] thead th:focus-visible { color: var(--text); background: var(--panel-3); }
+/* Same clipping story as the tab strips below: .table-wrap is overflow-x:auto,
+   which computes overflow-y:auto too, so it clips at its padding box — and a
+   thead th sits flush against it. An outset ring loses its whole top edge (and
+   the first column loses its left edge). Draw it inside the cell. */
+table[data-sortable] thead th:focus-visible {
+  color: var(--text);
+  background: var(--panel-3);
+  outline-offset: -2px;
+}
 thead th.sort-asc::after { content: " ↑"; color: var(--accent); }
 thead th.sort-desc::after { content: " ↓"; color: var(--accent); }
-tbody tr:nth-child(odd) { background: #1a1f26; }
+tbody tr:nth-child(odd) { background: var(--row-alt); }
 tbody tr:nth-child(even) { background: var(--panel); }
 tbody tr:hover { background: var(--panel-3); }
 tbody tr:last-child td { border-bottom: 0; }
@@ -51,8 +59,9 @@ tr.avg-row > td { border-top: 1px solid var(--line); color: var(--muted); font-s
   color: var(--text);
   font: inherit;
   font-size: .85rem;
-  outline: none;
 }
+/* The accent border is affordance, not a focus indicator — the global
+   :focus-visible ring has to survive, so no outline:none here. */
 .table-search:focus { border-color: var(--accent); }
 .empty-state { margin: .6rem 0 0; color: var(--muted); font-size: .85rem; }
 .select-label { display: flex; align-items: center; gap: .5rem; color: var(--muted); font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; }
@@ -102,6 +111,13 @@ tr.avg-row > td { border-top: 1px solid var(--line); color: var(--muted); font-s
 }
 .tabs button:first-child { border-left: 0; }
 .tabs button[aria-selected="true"] { background: var(--panel-3); color: var(--text); }
+/* Both strips clip to their rounded box, which swallows an outset focus ring
+   entirely — the buttons are flush with the container's padding edge. Draw the
+   ring inside the button instead so keyboard focus is actually visible. */
+.tabs button:focus-visible, .view-toggle button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -3px;
+}
 [data-tab-panel][hidden] { display: none; }
 #players-index .col-adv, #players-index .col-p36, #players-index .col-rate { display: none; }
 #players-index.show-adv .col-adv { display: table-cell; }

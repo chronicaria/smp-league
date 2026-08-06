@@ -20,13 +20,20 @@
   gap: .6rem;
   padding: .3rem .45rem;
   background: var(--panel-2);
-  border: 1px solid rgba(255,255,255,.04);
+  /* --line, not a white alpha: a white hairline is invisible on the light theme's
+     panels, so the Bio rows lost their edges entirely under html[data-theme=light]. */
+  border: 1px solid var(--line);
   border-radius: .15rem;
   font-size: .8rem;
 }
 .detail-item span { color: var(--muted); }
 .detail-item strong { text-align: right; font-weight: 600; }
 .rating-panel { display: grid; gap: .6rem; }
+/* Two tracks, not three. Matching .rating-groups below lines the boxes up with
+   Physical and Shooting, but there is no third headline number to fill the track
+   over Skill, so it left a 333px hole in the card that reads as a tile that failed
+   to load. A wide label-to-number row is the same idiom as .rating-row and
+   .detail-item; a missing tile is not. */
 .rating-topline { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
 .big-rating {
   display: flex;
@@ -43,7 +50,7 @@
 .rating-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; }
 .rating-group {
   padding: .55rem .6rem;
-  border: 1px solid rgba(255,255,255,.05);
+  border: 1px solid var(--line);  /* see .detail-item: a white alpha vanishes in light */
   border-radius: .15rem;
   background: var(--panel-2);
 }
@@ -208,6 +215,22 @@
   object-fit: cover;
   object-position: top;
 }
+/* Draft prospects carry no photo, so their portrait is a pre-rendered facesjs SVG:
+   a 2:3 standing figure, not a square headshot. Cover-cropping one to 132x132 sliced
+   it off below the mouth on all 745 prospect pages. Fit the whole figure into a 2:3
+   slot of the same height so it stands on the nameplate instead. The suffix match is
+   the only tell available — photos are .png/.jpg, face renders are always .svg — and
+   it also catches the runtime swap portraits.py does when a hot-linked photo 404s. */
+.player-card-portrait .card-portrait[src$=".svg"] {
+  width: 88px;
+  object-fit: contain;
+  object-position: bottom;
+}
+/* A dead photo with no face render falls back to the inline monogram roundel.
+   identity.css sizes .monogram for chips (2.5rem), so without this the hero slot
+   showed a 40px disc marooned in a 132px box. */
+.player-card-portrait .portrait-monogram { display: grid; place-items: end center; }
+.player-card-portrait .portrait-monogram .monogram { width: 100%; height: 100%; }
 /* Nameplate: position chip + team + age (+ FA asking price). */
 .player-card-plate {
   display: flex;
@@ -351,11 +374,15 @@
 .career-dot--now { outline: 2px solid var(--accent); outline-offset: 1px; }
 a.career-dot:hover { transform: scale(1.18); }
 @media (max-width: 700px) {
-  .player-card-face { flex-direction: column; align-items: flex-start; min-height: 0; }
-  .player-card-body { padding-top: 2.1rem; }
-  .player-card h1 { font-size: 1.5rem; }
-  .player-card-portrait { align-self: flex-end; margin-top: -1.25rem; }
+  /* Keep the desktop composition and shrink it. Stacking the portrait under the
+     nameplate left an L-shaped void either side of both and pushed a near-empty
+     220px hero onto a 390px phone; side by side the same card is 128px and full. */
+  .player-card-face { gap: .6rem; padding: .9rem 1.1rem 0; min-height: 128px; }
+  .player-card-body { padding: 1.9rem 0 .7rem; }
+  .player-card h1 { font-size: 1.4rem; }
+  .player-card-num { top: .8rem; font-size: 1.2rem; }
   .player-card-portrait .card-portrait { width: 104px; height: 104px; }
+  .player-card-portrait .card-portrait[src$=".svg"] { width: 70px; }
   .plate-ask { margin-left: 0; width: 100%; }
 }
 

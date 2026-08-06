@@ -16,6 +16,7 @@ from ..core import (
     ALL_PLAYERS_BY_PID,
     FREE_AGENT_TID,
     RETIRED_TID,
+    age,
     esc,
     event_player_link,
     fmt_minutes,
@@ -36,6 +37,7 @@ from ..core import (
     made_attempted,
     made_pct,
     page_html,
+    player_link,
     player_name,
     player_url,
     plus_minus_class,
@@ -60,7 +62,7 @@ from ..identity import team_identity
 # Read-only consumption of the sim model: the exact constants and player-impact
 # function behind simulate_league / sim_client_inputs, so the preview projection
 # below shows the same numbers the Monte Carlo uses (parity is tested).
-from ..simmodel import SIM_HCA, SIM_LOGISTIC_K, SIM_MOV_BLEND_K, rotation_strength
+from ..simmodel import SIM_HCA, SIM_LOGISTIC_K, SIM_MOV_BLEND_K, rotation_impacts, rotation_strength
 
 
 SHOT_ZONES = [("AtRim", "Rim"), ("LowPost", "Post"), ("MidRange", "Mid"), ("", "3P")]
@@ -73,6 +75,20 @@ DRAMA_CLASSIC_MIN = 50.0
 
 # FPTS is a local header title because core.GLOSSARY is owned elsewhere.
 FPTS_TITLE = "Fantasy points"
+
+# Same reason: the preview's two non-obvious numbers. Both are simmodel terms,
+# so the wording has to promise exactly what the sim computes and no more.
+IMPACT_TITLE = (
+    "Projected points this player adds to the scoring margin at his rotation slot — "
+    "the terms the spread above is summed from"
+)
+# The totals print to one decimal but the spread is computed from the full
+# values, so on 76 of the 180 previews the printed subtraction lands 0.1 off the
+# printed spread. Say what the spread is built from, not that it equals this.
+ROTATION_TOTAL_TITLE = (
+    "Sum of the ten rotation impacts. The gap between these two totals, plus the "
+    "1.5-point home edge, is what the projected spread above is built from."
+)
 
 
 def fmt_fpts(fpts: float | None) -> str:
@@ -128,22 +144,6 @@ def box_player_link(player_box: dict[str, Any], players_by_pid: dict[int, dict[s
     return f'{number_html}<span class="player-link">{esc(name)}</span> {skill_html}'
 
 
-def selected_box_players(team_box: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
-    """Projected (preview) rotations only: top of the roster, starters first."""
-    players = team_box.get("players") or []
-    starters = [p for p in players if safe_int(p.get("gs")) > 0]
-    active_bench = [p for p in players if p not in starters and (safe_float(p.get("min")) > 0 or safe_int(p.get("gp")) > 0)]
-    selected = starters[:5] + active_bench[:5]
-    if len(selected) < 10:
-        for p in players:
-            if p not in selected:
-                selected.append(p)
-            if len(selected) >= 10:
-                break
-    bench_start_index = min(5, len(starters[:5]))
-    return selected[:10], bench_start_index
-
-
 def played_box_players(team_box: dict[str, Any]) -> tuple[list[dict[str, Any]], int, list[dict[str, Any]]]:
     """Completed games: everyone with minutes (starters first), plus the DNP list."""
     players = team_box.get("players") or []
@@ -170,15 +170,6 @@ def dnp_footer_html(dnp_players: list[dict[str, Any]], players_by_pid: dict[int,
 
 
 def box_score_player_row(player_box: dict[str, Any], players_by_pid: dict[int, dict[str, Any]], root: str, cls: str = "") -> str:
-    if player_box.get("_projected"):
-        row = "".join([
-            td(box_player_link(player_box, players_by_pid, root), sort=player_box.get("name"), cls="name-cell"),
-            td(esc(player_box.get("pos", "—")), sort=player_box.get("pos", "")),
-            *[td("—") for _ in range(15)],
-        ])
-        cls_attr = f' class="{cls}"' if cls else ""
-        return f"<tr{cls_attr}>{row}</tr>"
-
     trb = safe_float(player_box.get("orb")) + safe_float(player_box.get("drb"))
     fpts = fantasy_pts(player_box)
     row = "".join([
@@ -238,47 +229,26 @@ def box_team_percentages_row(team_box: dict[str, Any]) -> str:
     return f"<tr class=\"pct-row\">{''.join(cells)}</tr>"
 
 
-def projected_team_box(tid: Any, players: list[dict[str, Any]], season: int) -> dict[str, Any]:
-    tid_int = safe_int(tid)
-    roster = [p for p in players if p.get("tid") == tid_int and p.get("retiredYear") is None]
-    roster.sort(key=lambda p: (-safe_int(latest_rating(p, season).get("ovr")), player_name(p)))
-    selected = roster[:10]
-    projected_players: list[dict[str, Any]] = []
-    for i, player in enumerate(selected):
-        rating = latest_rating(player, season)
-        projected_players.append({
-            "pid": player.get("pid"),
-            "name": player_name(player),
-            "pos": rating.get("pos", "—"),
-            "jerseyNumber": player.get("jerseyNumber"),
-            "skills": rating.get("skills") or [],
-            "gs": 1 if i < 5 else 0,
-            "_projected": True,
-        })
-    return {"tid": tid_int, "players": projected_players, "_projected": True}
-
-
 def box_score_team_table(team_box: dict[str, Any], teams_by_tid: dict[int, dict[str, Any]], players_by_pid: dict[int, dict[str, Any]], root: str) -> str:
+    """A played game's box score. Unplayed games get preview_rotations_html instead.
+
+    This used to double as the preview state by filling every stat cell with an
+    em-dash: two 16-column tables, 160 empty cells, on a page whose only job is
+    to sell a game nobody has played yet. A projection is not a blank box score.
+    """
     tid = safe_int(team_box.get("tid"))
     team_name = team_full_for_tid(tid, teams_by_tid)
-    if team_box.get("_projected"):
-        selected, bench_index = selected_box_players(team_box)
-        dnp: list[dict[str, Any]] = []
-    else:
-        selected, bench_index, dnp = played_box_players(team_box)
+    selected, bench_index, dnp = played_box_players(team_box)
     rows: list[str] = []
     for i, player_box in enumerate(selected):
         cls = "bench-start" if i == bench_index and i > 0 else ""
         rows.append(box_score_player_row(player_box, players_by_pid, root, cls=cls))
-    if not team_box.get("_projected"):
-        rows.append(box_team_totals_row(team_box))
-        rows.append(box_team_percentages_row(team_box))
-    note = '<p class="muted small-copy">Projected active rotation · stats arrive after tip-off.</p>' if team_box.get("_projected") else ""
+    rows.append(box_team_totals_row(team_box))
+    rows.append(box_team_percentages_row(team_box))
     header_html = "".join(th(label) for label in ["Name", "Pos", "MP", "FG", "3P", "FT", "ORB", "TRB", "AST", "TOV", "STL", "BLK", "BA", "PF", "PTS", "+/-"]) + fpts_th()
     return f"""
     <section class="box-team-section">
       <h2>{team_label(tid, teams_by_tid, root=root)}</h2>
-      {note}
       <div class="table-wrap box-table-wrap">
         <table data-sortable class="box-score-table">
           <caption class="sr-only">{esc(team_name)} box score</caption>
@@ -486,7 +456,15 @@ def pager_html(target: dict[str, Any] | None, direction: str, teams_by_tid: dict
     label = "Prev" if direction == "prev" else "Next"
     dir_text = f"← {label}" if direction == "prev" else f"{label} →"
     if target is None:
-        return f'<span class="button-link gx-pager disabled">{esc(dir_text)}</span>'
+        # A one-line dead pager opposite a two-line live one pushed the whole
+        # scoreboard off-centre on the season's first and last game. Say why it
+        # is dead and the two sides match.
+        why = "First game of the season" if direction == "prev" else "Last game of the season"
+        return (
+            f'<span class="button-link gx-pager disabled">'
+            f'<span class="gx-pager-dir">{esc(dir_text)}</span>'
+            f'<span class="gx-pager-ctx">{esc(why)}</span></span>'
+        )
     away_ab = team_abbrev_for_tid(target.get("away_tid"), teams_by_tid)
     home_ab = team_abbrev_for_tid(target.get("home_tid"), teams_by_tid)
     ctx = f"Day {safe_int(target.get('day'))} · {away_ab} @ {home_ab}"
@@ -657,12 +635,18 @@ def season_series_html(item: dict[str, Any], all_items: list[dict[str, Any]], te
         winner = game_winner_tid(m)
         if winner in wins:
             wins[winner] += 1
-    if wins[tid_a] == wins[tid_b]:
-        series_text = f"Series tied {wins[tid_a]}-{wins[tid_b]}" if completed else "First meeting of the season"
+    if not completed:
+        # "First meeting of the season" was printed on all four meeting pages
+        # while none had been played, which is false on three of them. Say where
+        # in the series this game actually falls.
+        position = next((i for i, m in enumerate(meetings) if str(m.get("gid")) == str(item.get("gid"))), 0) + 1
+        series_text = f"Meeting {position} of {len(meetings)} · none played yet"
+    elif wins[tid_a] == wins[tid_b]:
+        series_text = f"Series tied {wins[tid_a]}-{wins[tid_b]}"
     else:
         lead_tid = tid_a if wins[tid_a] > wins[tid_b] else tid_b
         trail = min(wins.values())
-        series_text = f"{team_abbrev_for_tid(lead_tid, teams_by_tid)} lead{'s' if True else ''} the series {max(wins.values())}-{trail}"
+        series_text = f"{team_abbrev_for_tid(lead_tid, teams_by_tid)} leads the series {max(wins.values())}-{trail}"
     chips = []
     for m in meetings:
         current = str(m.get("gid")) == str(item.get("gid"))
@@ -684,7 +668,10 @@ def season_series_html(item: dict[str, Any], all_items: list[dict[str, Any]], te
                 f"{esc(team_abbrev_for_tid(m.get('home_tid'), teams_by_tid))}"
             )
         cls = "series-chip current" if current else "series-chip"
-        chips.append(f'<a class="{cls}" href="{esc(game_url(m, root))}">{label}</a>')
+        # The current chip links to the page you are already on; the accent border
+        # says so visually, aria-current says so to a screen reader.
+        marker = ' aria-current="page"' if current else ""
+        chips.append(f'<a class="{cls}"{marker} href="{esc(game_url(m, root))}">{label}</a>')
     return f"""
     <section class="card">
       <div class="section-title-row"><h2>Season Series</h2><span class="muted small-copy">{esc(series_text)}</span></div>
@@ -796,6 +783,87 @@ def preview_projection_html(item: dict[str, Any], teams: list[dict[str, Any]],
     """
 
 
+def team_roster(tid: int, players: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [p for p in players if safe_int(p.get("tid"), -9) == tid and p.get("retiredYear") is None]
+
+
+def preview_rotation_section(tid: int, players: list[dict[str, Any]], season: int,
+                             teams_by_tid: dict[int, dict[str, Any]], root: str) -> str:
+    """One team's projected rotation: who plays, and what the sim thinks he is worth.
+
+    Everything here is known before tip-off — the roster, the ratings, and
+    simmodel.rotation_impacts, which is literally the per-player term the
+    projected spread in the hero is summed from. Rows are in the sim's own
+    rotation order, so the reader sees the model's depth chart, not a guess.
+    """
+    roster = team_roster(tid, players)
+    impacts = rotation_impacts(roster, season)
+    if not impacts:
+        return ""
+    rows = []
+    for player, impact in impacts:
+        rating = latest_rating(player, season)
+        rows.append("<tr>" + "".join([
+            td(player_link(player, root), sort=player_name(player), cls="name-cell"),
+            td(esc(rating.get("pos") or "—"), sort=rating.get("pos") or ""),
+            td(esc(age(player, season))),
+            td(fmt_number(rating.get("ovr"), 0), sort=rating.get("ovr")),
+            td(fmt_number(rating.get("pot"), 0), sort=rating.get("pot")),
+            td(fmt_signed(impact, 1), sort=impact, cls="gx-rot-imp"),
+        ]) + "</tr>")
+    headers = "".join([
+        th("Name"), th("Pos"), th("Age"), th("Ovr"), th("Pot"),
+        f'<th scope="col" title="{esc(IMPACT_TITLE)}">Imp</th>',
+    ])
+    reserves = len(roster) - len(impacts)
+    reserve_note = (
+        f'<p class="gx-rot-reserves muted small-copy">{reserves} more under contract, outside the projected rotation.</p>'
+        if reserves > 0 else ""
+    )
+    return f"""
+    <section class="box-team-section gx-rot">
+      <h2>{team_label(tid, teams_by_tid, root=root)}</h2>
+      <p class="gx-rot-cap muted small-copy">Projected active rotation · in the sim's order</p>
+      <div class="table-wrap">
+        <table class="gx-rot-table">
+          <caption class="sr-only">{esc(team_full_for_tid(tid, teams_by_tid))} projected rotation</caption>
+          <thead><tr>{headers}</tr></thead>
+          <tbody>{''.join(rows)}</tbody>
+        </table>
+      </div>
+      {reserve_note}
+    </section>
+    """
+
+
+def preview_rotations_html(item: dict[str, Any], teams_by_tid: dict[int, dict[str, Any]],
+                           players: list[dict[str, Any]], season: int, root: str) -> str:
+    """Both projected rotations side by side — the preview's stand-in for a box score."""
+    sections = [
+        preview_rotation_section(tid, players, season, teams_by_tid, root)
+        for tid in (safe_int(item.get("away_tid")), safe_int(item.get("home_tid")))
+        if tid in teams_by_tid
+    ]
+    sections = [s for s in sections if s]
+    if not sections:
+        return ""
+    return f'<div class="gx-rots">{"".join(sections)}</div>'
+
+
+def preview_roster_metrics(team: dict[str, Any], players: list[dict[str, Any]], season: int) -> dict[str, Any]:
+    """What a roster is before it has a record: ratings, age, and sim rotation total."""
+    roster = team_roster(safe_int(team.get("tid")), players)
+    impacts = rotation_impacts(roster, season)
+    ovrs = [safe_int(latest_rating(player, season).get("ovr")) for player, _ in impacts]
+    ages = [safe_int(age(player, season)) for player, _ in impacts if age(player, season) != "—"]
+    return {
+        "top5": sum(ovrs[:5]) / min(5, len(ovrs)) if ovrs else None,
+        "rotation_ovr": sum(ovrs) / len(ovrs) if ovrs else None,
+        "avg_age": sum(ages) / len(ages) if ages else None,
+        "strength": sum(impact for _, impact in impacts) if impacts else None,
+    }
+
+
 def preview_team_metrics(team: dict[str, Any], season: int) -> dict[str, Any]:
     team_season = latest_team_season(team, season)
     stat = latest_team_stat(team, season)
@@ -806,6 +874,9 @@ def preview_team_metrics(team: dict[str, Any], season: int) -> dict[str, Any]:
     tovp = 100 * tov / (fga + 0.44 * fta + tov) if (fga + 0.44 * fta + tov) else None
     ftr = safe_float(stat.get("ft")) / fga if fga else None
     return {
+        # Games played THIS season, not whatever row latest_team_stat fell back to:
+        # the preview switches to roster numbers when there is no record to compare.
+        "gp": safe_float(stat.get("gp")) if safe_int(stat.get("season")) == season else 0.0,
         "record": fmt_record(team_season.get("won"), team_season.get("lost")),
         "streak": streak_text(team_season.get("streak")),
         "l10": last_ten_text(team_season.get("lastTen")),
@@ -825,19 +896,37 @@ def game_preview_html(item: dict[str, Any], teams_by_tid: dict[int, dict[str, An
         return ""
     away = preview_team_metrics(away_team, season)
     home = preview_team_metrics(home_team, season)
-    rows_spec = [
-        ("Record", "record", None),
-        ("Streak", "streak", None),
-        ("Last 10", "l10", None),
-        ("Points/G", "ppg", 1),
-        ("Allowed/G", "papg", 1),
-        ("MOV", "mov", "signed"),
-        ("eFG%", "efg", 1),
-        ("TOV%", "tovp", 1),
-        ("FT/FGA", "ftr", "ratio"),
-    ]
+    # Before either side has played, every season-to-date row is an em-dash: nine
+    # of them, twice, is the whole card saying nothing. Compare the rosters
+    # instead — that much is real in preseason, and Rotation total is the number
+    # the hero's spread is the difference of.
+    played = safe_float(away.get("gp")) + safe_float(home.get("gp")) > 0
+    if played:
+        caption = "season-to-date"
+        rows_spec = [
+            ("Record", "record", None, ""),
+            ("Streak", "streak", None, ""),
+            ("Last 10", "l10", None, ""),
+            ("Points/G", "ppg", 1, ""),
+            ("Allowed/G", "papg", 1, ""),
+            ("MOV", "mov", "signed", ""),
+            ("eFG%", "efg", 1, ""),
+            ("TOV%", "tovp", 1, ""),
+            ("FT/FGA", "ftr", "ratio", ""),
+        ]
+    else:
+        caption = "preseason · no games played"
+        away.update(preview_roster_metrics(away_team, players, season))
+        home.update(preview_roster_metrics(home_team, players, season))
+        rows_spec = [
+            ("Record", "record", None, ""),
+            ("Top five Ovr", "top5", 1, "Mean overall of the five best men in the projected rotation"),
+            ("Rotation Ovr", "rotation_ovr", 1, "Mean overall across the projected ten-man rotation"),
+            ("Rotation age", "avg_age", 1, "Mean age across the projected ten-man rotation"),
+            ("Rotation total", "strength", "signed", ROTATION_TOTAL_TITLE),
+        ]
     rows = []
-    for label, key, fmt in rows_spec:
+    for label, key, fmt, hint in rows_spec:
         def render(value):
             if fmt is None:
                 return esc(value)
@@ -846,9 +935,10 @@ def game_preview_html(item: dict[str, Any], teams_by_tid: dict[int, dict[str, An
             if fmt == "ratio":
                 return fmt_ratio(value, 3)
             return fmt_number(value, fmt)
+        label_attrs = f' title="{esc(hint)}"' if hint else ""
         rows.append(
             f"<tr><td>{render(away.get(key))}</td>"
-            f'<td class="cmp-label">{esc(label)}</td>'
+            f'<td class="cmp-label"{label_attrs}>{esc(label)}</td>'
             f"<td>{render(home.get(key))}</td></tr>"
         )
     injuries = []
@@ -869,18 +959,23 @@ def game_preview_html(item: dict[str, Any], teams_by_tid: dict[int, dict[str, An
             injuries.append(f'<p class="small-copy"><strong>{esc(team_abbrev(team))}:</strong> {" · ".join(bits)}</p>')
         else:
             injuries.append(f'<p class="small-copy"><strong>{esc(team_abbrev(team))}:</strong> <span class="healthy">no injuries</span></p>')
+    # The comparison table is ~21rem wide however wide the card is; left on its
+    # own it stranded a full screen of empty card beside it. The injury report is
+    # the other half of a matchup, so it sits in that space.
     return f"""
     <section class="card">
-      <div class="section-title-row"><h2>Matchup</h2><span class="muted small-copy">season-to-date</span></div>
-      <div class="table-wrap fit-table">
-        <table class="cmp-table">
-          <thead><tr><th>{team_label(item.get("away_tid"), teams_by_tid, root)}</th><th></th><th>{team_label(item.get("home_tid"), teams_by_tid, root)}</th></tr></thead>
-          <tbody>{''.join(rows)}</tbody>
-        </table>
-      </div>
-      <div class="preview-injuries">
-        <h3 class="small-copy muted">INJURY REPORT</h3>
-        {''.join(injuries)}
+      <div class="section-title-row"><h2>Matchup</h2><span class="muted small-copy">{esc(caption)}</span></div>
+      <div class="gx-matchup-body">
+        <div class="table-wrap fit-table">
+          <table class="cmp-table">
+            <thead><tr><th>{team_label(item.get("away_tid"), teams_by_tid, root)}</th><th></th><th>{team_label(item.get("home_tid"), teams_by_tid, root)}</th></tr></thead>
+            <tbody>{''.join(rows)}</tbody>
+          </table>
+        </div>
+        <div class="preview-injuries">
+          <h3 class="small-copy muted">INJURY REPORT</h3>
+          {''.join(injuries)}
+        </div>
       </div>
     </section>
     """
@@ -915,11 +1010,17 @@ def render_game_page(item: dict[str, Any], all_items: list[dict[str, Any]], team
     index = ordered_items.index(item) if item in ordered_items else -1
     prev_item = ordered_items[index - 1] if index > 0 else None
     next_item = ordered_items[index + 1] if 0 <= index < len(ordered_items) - 1 else None
-    home_box = item.get("home_box") or projected_team_box(item.get("home_tid"), players, season)
-    away_box = item.get("away_box") or projected_team_box(item.get("away_tid"), players, season)
     completed = is_completed_game_item(item)
-    preview = "" if completed else game_preview_html(item, teams_by_tid, players, season, "../")
-    projection = "" if completed else preview_projection_html(item, teams, teams_by_tid, players, season)
+    if completed:
+        preview = projection = ""
+        rosters = "".join(
+            box_score_team_table(item.get(key) or {}, teams_by_tid, players_by_pid, root="../")
+            for key in ("away_box", "home_box")
+        )
+    else:
+        preview = game_preview_html(item, teams_by_tid, players, season, "../")
+        projection = preview_projection_html(item, teams, teams_by_tid, players, season)
+        rosters = preview_rotations_html(item, teams_by_tid, players, season, "../")
     series = season_series_html(item, all_items, teams_by_tid, "../")
     clutch = clutch_plays_html(item, "../")
     shots = game_shot_profile(item, teams_by_tid, "../")
@@ -927,12 +1028,12 @@ def render_game_page(item: dict[str, Any], all_items: list[dict[str, Any]], team
     {box_score_header(item, teams_by_tid, prev_item, next_item, feats_by_gid=feats_by_gid, projection_html=projection)}
     {clutch}
     {preview}
-    {box_score_team_table(away_box, teams_by_tid, players_by_pid, root='../')}
-    {box_score_team_table(home_box, teams_by_tid, players_by_pid, root='../')}
+    {rosters}
     {shots}
     {series}
     """
     away_abbrev = team_abbrev_for_tid(item.get("away_tid"), teams_by_tid)
     home_abbrev = team_abbrev_for_tid(item.get("home_tid"), teams_by_tid)
-    title = f"{away_abbrev} at {home_abbrev} Box Score"
+    # A page with no box score on it should not be titled one.
+    title = f"{away_abbrev} at {home_abbrev} {'Box Score' if completed else 'Preview'}"
     return page_html(title, body, teams, root="../", active="schedule")

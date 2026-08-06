@@ -75,7 +75,7 @@
   border: 1px solid var(--line);
   border-radius: .15rem;
   background: var(--panel);
-  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  box-shadow: var(--shadow);
 }
 .team-menu a, .nav-menu a {
   display: block;
@@ -88,6 +88,21 @@
   text-decoration: none;
 }
 .team-menu a:hover, .team-menu a.active, .nav-menu a:hover, .nav-menu a.active { color: var(--text); background: var(--panel-2); }
+/* Below the burger breakpoint .primary-nav becomes a full-width block, so a
+   summary can sit anywhere along the row — and `right: 0` then measures from
+   the summary's right edge, not the viewport's. League opened at x = -112px on
+   a 390px phone: half the menu off-screen, labels sliced in half, nothing to
+   scroll to. Anchor these to the left edge of their own summary instead; the
+   widest item is 13rem, so they still clear the viewport. (.team-menu also
+   matches, but game.css makes it position:static here, where offsets are
+   inert.) */
+@media (max-width: 900px) {
+  .team-menu, .nav-menu {
+    right: auto;
+    left: 0;
+    max-width: calc(100vw - 1.5rem);
+  }
+}
 
 /* ---------- header controls: theme toggle + My Team picker (W10) ---------- */
 .header-controls { display: flex; flex: 0 0 auto; align-items: center; gap: .4rem; }

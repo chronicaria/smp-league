@@ -1,20 +1,54 @@
 /* ---------- print stylesheet (W10) ---------- */
 @media print {
+  /* Paper is not themed. Without this, printing from the dark theme sends the
+     dark palette to the printer: --text is #e8ecf1, so every player name, block
+     title and chip comes out white-on-white, and --muted lands at 2.8:1. Only
+     `body` was being reset, and nothing inherits through the hundreds of rules
+     that set an explicit `color: var(--…)`. Re-point the tokens themselves and
+     the whole sheet follows, both themes, every page.
+     The selector list has to include the [data-theme] forms — the inline script
+     always sets that attribute, and :root alone loses to it on specificity. */
+  :root, html[data-theme="light"], html[data-theme="dark"] {
+    --bg: #fff;
+    --panel: #fff;
+    --panel-2: #f4f5f7;
+    --panel-3: #e9ebee;
+    --line: #bbb;
+    --text: #111;
+    --muted: #555;
+    --accent: #1a4f9c;
+    --accent-soft: rgba(26, 79, 156, .10);
+    --good: #15703f;
+    --good-soft: rgba(21, 112, 63, .12);
+    --bad: #9c2436;
+    --bad-soft: rgba(156, 36, 54, .12);
+    --warn: #7a5200;
+    --warn-soft: rgba(122, 82, 0, .12);
+    --focus: #174ea6;
+    --row-alt: #f4f5f7;
+    --rule: rgba(0, 0, 0, .13);
+    --rule-strong: rgba(0, 0, 0, .35);
+    --shadow: none;
+    --shadow-lg: none;
+    color-scheme: light;
+  }
   html { scroll-behavior: auto; }
-  body { display: block; background: #fff; color: #000; font-size: 11px; }
+  body { display: block; background: var(--bg); color: var(--text); font-size: 11px; }
   .site-header, .nav-search, .nav-burger, .header-controls, .search-results,
   .copy-table, .palette-overlay, .gs-overlay, .footer-links, .table-search,
   .view-toggle, .pos-filter-bar, .h-anchor { display: none !important; }
-  .site-footer { padding: .5rem 0 0; border-top: 1px solid #bbb; background: none; }
-  .footer-meta { color: #333; }
+  .site-footer { padding: .5rem 0 0; border-top: 1px solid var(--line); background: none; }
+  .footer-meta { color: var(--muted); }
   a { color: inherit; text-decoration: none; }
   .page-shell { width: 100%; padding: 0; }
-  .card, .page-hero { background: none; border-color: #bbb; break-inside: avoid; page-break-inside: avoid; }
-  .table-wrap { overflow: visible; border-color: #bbb; }
+  .card, .page-hero { background: none; border-color: var(--line); break-inside: avoid; page-break-inside: avoid; }
+  .table-wrap { overflow: visible; border-color: var(--line); }
   table { background: none; }
-  thead th { position: static; background: none; color: #000; }
+  thead th { position: static; background: none; color: var(--text); }
   th:first-child, td:first-child,
   table.sticky-col2 th:nth-child(2), table.sticky-col2 td:nth-child(2) { position: static; }
   tbody tr:nth-child(odd), tbody tr:nth-child(even), tbody tr:hover { background: none; }
-  th, td { border-bottom: 1px solid #ccc; }
+  th, td { border-bottom: 1px solid var(--rule); }
+  /* Zebra is gone on paper, so a row split across a page break reads as two. */
+  tr { break-inside: avoid; page-break-inside: avoid; }
 }

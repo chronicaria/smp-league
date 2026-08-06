@@ -35,7 +35,10 @@
 .schedule-grid td:first-child, .schedule-grid th:first-child { text-align: center; }
 .schedule-grid td { padding: .18rem .3rem; }
 .day-label { color: var(--muted); font-variant-numeric: tabular-nums; }
-.off-day { background: rgba(255,255,255,.015); }
+/* Same translucent veil as the table hairline — a team with no game reads as a
+   knocked-back cell in both themes, rather than the old alpha-white that the
+   light theme rendered as nothing at all. */
+.off-day { background: var(--rule); }
 .sched-cell { display: block; padding: .12rem .25rem; border-radius: .15rem; color: var(--text); font-size: .76rem; line-height: 1.25; text-decoration: none; }
 .sched-cell:hover { background: var(--panel-3); text-decoration: none; }
 .sched-result { display: block; font-size: .68rem; font-variant-numeric: tabular-nums; }
@@ -51,8 +54,10 @@
   text-transform: none;
   color: var(--text);
 }
-th.group-start, td.group-start { border-left: 2px solid rgba(255,255,255,.18); }
-td.cur-season, th.cur-season { background: rgba(91,157,255,.07); }
-thead th.cur-season { background: rgba(91,157,255,.14); color: var(--text); }
-tr.total-row td.cur-season { background: rgba(91,157,255,.12); }
+th.group-start, td.group-start { border-left: 2px solid var(--rule-strong); }
+/* Current-season columns tint with the live accent, so they follow the light
+   theme and the My Team accent override instead of staying fixed blue. */
+td.cur-season, th.cur-season { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+thead th.cur-season { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text); }
+tr.total-row td.cur-season { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 

@@ -17,12 +17,23 @@
 .button-link.disabled { opacity: .45; pointer-events: none; }
 .box-score-hero {
   display: grid;
-  grid-template-columns: auto minmax(0, 48rem) auto;
+  /* The side tracks must be EQUAL, not content-sized: the matchup line is the
+     hero's centre and the split background's seam is drawn at 50%, so a prev
+     pager wider than the next one (the season's first game reads "First game of
+     the season" opposite "Day 1 · CAM @ WAL") slid the whole scoreboard off the
+     seam. A shared floor plus 1fr keeps both tracks identical at every width:
+     with slack they grow together, without slack they sit at the same floor.
+     10rem clears the longest pager caption; below 900px the grid is one column. */
+  grid-template-columns: minmax(10rem, 1fr) minmax(0, 48rem) minmax(10rem, 1fr);
   align-items: center;
   justify-content: center;
   gap: .75rem;
   margin-bottom: .75rem;
 }
+/* ...and inside those equal tracks the pagers hug the scoreboard rather than
+   floating in the middle of the empty side. */
+.gx-hero .game-pager { justify-self: end; }
+.gx-hero .game-pager:last-child { justify-self: start; }
 .scoreboard-core { text-align: center; }
 .scoreboard-core h1 {
   font-size: 1.1rem;
@@ -63,13 +74,24 @@
   pointer-events: none;
   background: color-mix(in srgb, var(--gx-side) 28%, var(--panel));
 }
-.gx-bg-away { --gx-side: var(--gx-away-primary); clip-path: polygon(0 0, 57.6% 0, 45.6% 100%, 0 100%); }
-.gx-bg-home { --gx-side: var(--gx-home-primary); clip-path: polygon(58.4% 0, 100% 0, 100% 100%, 46.4% 100%); }
+/* The seam is centred on 50% — the matchup line, the scores and the projection
+   block are all centred, and the old 58%/46% split put the home team's name on
+   the away team's colour. The two halves overlap by .4% instead of leaving a
+   gap: the gap showed the panel through as a bright diagonal slash in the light
+   theme, straight across the projection block. */
+.gx-bg-away { --gx-side: var(--gx-away-primary); clip-path: polygon(0 0, 53.2% 0, 47.2% 100%, 0 100%); }
+.gx-bg-home { --gx-side: var(--gx-home-primary); clip-path: polygon(52.8% 0, 100% 0, 100% 100%, 46.8% 100%); }
 .gx-bg.gx-won { background: color-mix(in srgb, var(--gx-side) 38%, var(--panel)); }
 .gx-bg.gx-lost {
   background: color-mix(in srgb, var(--gx-side) 12%, var(--panel));
   filter: saturate(.45);
 }
+/* Team colours are dark by design, so the same mix that reads as a tint over a
+   dark panel reads as a saturated pastel block over a white one. Match the
+   weight, not the number. */
+html[data-theme="light"] .gx-hero .gx-bg { background: color-mix(in srgb, var(--gx-side) 15%, var(--panel)); }
+html[data-theme="light"] .gx-hero .gx-bg.gx-won { background: color-mix(in srgb, var(--gx-side) 22%, var(--panel)); }
+html[data-theme="light"] .gx-hero .gx-bg.gx-lost { background: color-mix(in srgb, var(--gx-side) 7%, var(--panel)); }
 .scoreboard-core h1.gx-matchup {
   align-items: stretch;
   gap: .9rem;
@@ -131,6 +153,17 @@ a.gx-team-name:hover { text-decoration: underline; }
 .gx-win-row td { font-weight: 700; }
 .gx-win-tick { color: var(--good); font-weight: 700; }
 .gx-pager { flex-direction: column; gap: .05rem; line-height: 1.3; padding: .35rem .6rem; }
+/* The dead pager carries a reason now ("First game of the season"), and that is
+   information, not chrome. .button-link.disabled dims the whole box to 45%,
+   which stacked on --muted lands the caption near 1.8:1 against a light panel —
+   so state it with tokens instead of alpha: no fill, softer rule, muted ink.
+   Still obviously inert next to a live pager, still pointer-events: none. */
+.gx-pager.disabled {
+  opacity: 1;
+  color: var(--muted);
+  background: none;
+  border-color: color-mix(in srgb, var(--line) 65%, transparent);
+}
 .gx-pager-ctx { font-size: .66rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
 .gx-dnp { margin: .4rem 0 0; }
 .gx-dnp a { color: var(--muted); }
@@ -143,8 +176,10 @@ a.gx-team-name:hover { text-decoration: underline; }
   padding: .6rem .85rem .5rem;
   border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
   border-radius: .25rem;
-  background: color-mix(in srgb, var(--panel) 72%, transparent);
-  backdrop-filter: blur(2px);
+  /* Near-opaque, not frosted: a blurred translucent pane over the team colours
+     was the one piece of glass on the site, and it let the hero's seam show
+     through the numbers. */
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
 }
 .gx-proj-nums {
   display: flex;
@@ -191,6 +226,37 @@ a.gx-team-name:hover { text-decoration: underline; }
 .gx-proj-fill-away + .gx-proj-fill-home { border-left: 2px solid var(--panel); }
 .gx-proj-caption { margin: .45rem 0 0; text-align: center; }
 
+/* ---------- gx-rot / gx-matchup-body: the preview's two real panels ---------- */
+/* The comparison table is a fixed ~21rem however wide the card is. Putting the
+   injury report beside it fills the card instead of stranding a screen of empty
+   panel to its right. */
+.gx-matchup-body {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: .6rem 1.5rem;
+  align-items: start;
+}
+.gx-matchup-body .preview-injuries { margin-top: 0; }
+
+/* Both projected rotations side by side: two short tables read as a comparison,
+   and stacked full-width they would repeat the dead space they replaced.
+   auto-fit, not repeat(2): a six-column rotation table needs ~34rem before the
+   name cell (number + name + up to seven skill chips) starts scrolling, and a
+   forced two-up put a horizontal scrollbar inside one of two adjacent tables at
+   1024px — the width where the comparison matters most. Stacked beats clipped. */
+.gx-rots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(34rem, 1fr));
+  gap: .75rem;
+  align-items: start;
+  margin-bottom: .75rem;
+}
+.gx-rots .box-team-section { margin-bottom: 0; }
+.gx-rot-cap { margin: 0 0 .4rem; }
+.gx-rot-table { font-variant-numeric: tabular-nums; }
+.gx-rot-imp { color: var(--text); font-weight: 600; }
+.gx-rot-reserves { margin: .35rem 0 0; }
+
 @media (max-width: 900px) {
   .site-header { flex-direction: column; align-items: flex-start; }
   .nav-search { flex: none; width: 100%; }
@@ -212,5 +278,15 @@ a.gx-team-name:hover { text-decoration: underline; }
   .gx-team-name { font-size: .92rem; }
   .gx-score { font-size: 1.5rem; }
   .gx-pager-ctx { white-space: normal; }
+  .gx-hero .game-pager, .gx-hero .game-pager:last-child { justify-self: start; }
+  /* minmax(0, 1fr), never a bare 1fr: a grid track's automatic minimum is the
+     item's min-content, so a single-column stack of a rotation table floored
+     the track at the table's natural ~550px and scrolled the whole PAGE
+     sideways by ~170px on a phone. Zero minimum puts the scrolling back inside
+     .table-wrap, where the sticky name column is built for it. */
+  .gx-matchup-body { grid-template-columns: minmax(0, 1fr); }
+  .gx-matchup-body .preview-injuries { margin-top: .3rem; }
+  .gx-rots { grid-template-columns: minmax(0, 1fr); }
+  .gx-rots .box-team-section { margin-bottom: .25rem; }
 }
 

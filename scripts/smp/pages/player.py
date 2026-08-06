@@ -13,6 +13,7 @@ from typing import Any
 
 from ..core import (
     ALL_PLAYERS_BY_PID,
+    DRAFT_PROSPECT_TID,
     FREE_AGENT_TID,
     GLOSSARY,
     RATING_GROUPS,
@@ -33,7 +34,6 @@ from ..core import (
     fmt_signed,
     game_slug_from_gid,
     heat_style_pct,
-    initials,
     injury_html,
     latest_rating,
     made_attempted,
@@ -48,6 +48,7 @@ from ..core import (
     player_url,
     playoff_stats_since,
     plus_minus_class,
+    previous_rating,
     rating_delta_html,
     rating_percentile_ramps,
     rating_skills,
@@ -76,9 +77,9 @@ from ..charts import development_chart_html
 # pages can never drift apart.
 from .league import fa_asking_price, fa_asking_term
 
-from ..identity import crest_svg, monogram_svg, team_css_vars, team_identity
+from ..identity import crest_svg, team_css_vars, team_identity
 
-from ..portraits import portrait_html as _portraits_portrait_html
+from ..portraits import portrait_html
 
 from ..derived import fantasy_pts, led_league, player_shot_zones, SHOT_ZONES, ZONE_LABELS
 
@@ -192,23 +193,19 @@ def detail_item(label: str, value: str) -> str:
     return f'<div class="detail-item"><span>{esc(label)}</span><strong>{value}</strong></div>'
 
 
-def _delta_titled(player: dict[str, Any], key: str, rating: dict[str, Any]) -> str:
-    """rating_delta_html with a 'vs last season' tooltip on the delta readout."""
-    return f'<span title="Change vs last season">{rating_delta_html(player, key, rating)}</span>'
+def _is_prospect(player: dict[str, Any]) -> bool:
+    """Un-drafted draft-class player: no team, no contract, no stats, one ratings row."""
+    return safe_int(player.get("tid"), RETIRED_TID) == DRAFT_PROSPECT_TID
 
 
-def player_portrait(player: dict[str, Any], cls: str = "portrait", root: str = "../", size: int = 120) -> str:
-    """portraits.portrait_html with a local guard: its monogram fallback currently
-    passes ``size=`` to identity.monogram_svg (which takes ``css_class``); until
-    that is fixed upstream, render the roundel directly rather than crash."""
-    try:
-        return _portraits_portrait_html(player, cls=cls, root=root, size=size)
-    except TypeError:
-        mono = monogram_svg(initials(player), player.get("tid"), jersey_number=player.get("jerseyNumber"))
-        return (
-            f'<span class="{esc(cls)} portrait-monogram" role="img" '
-            f'aria-label="{esc(player_name(player))}">{mono}</span>'
-        )
+def _delta_titled(player: dict[str, Any], key: str, rating: dict[str, Any], titled: bool) -> str:
+    """rating_delta_html, tooltipped only when there IS a last season to compare to.
+
+    A "Change vs last season" tooltip over a first-year player's bare rating promises
+    a comparison the page cannot make -- in year one that is every player on the site.
+    """
+    body = rating_delta_html(player, key, rating)
+    return f'<span title="Change vs last season">{body}</span>' if titled else body
 
 
 # ---------------------------------------------------------------------------
@@ -356,8 +353,14 @@ def trading_card_html(player: dict[str, Any], teams_by_tid: dict[int, dict[str, 
         )
     elif is_fa:
         team_html = f'<a class="player-card-team" href="{root}free-agency.html">Free Agent</a>'
+    elif tid == DRAFT_PROSPECT_TID:
+        # Rostered players link to their team and free agents to the wire; a prospect
+        # had no way back to where he actually lives until this link.
+        team_html = f'<a class="player-card-team" href="{root}draft.html">Draft prospect</a>'
     else:
-        team_html = "Draft prospect"
+        # Every remaining tid is negative (retired, TOT, junk). team_full_for_tid
+        # would spell one of those "Team -3"; team_label knows the words for them.
+        team_html = team_label(tid, teams_by_tid, root)
     ask_html = ""
     if is_fa:
         bid_k = fa_asking_price(player, season)
@@ -396,7 +399,7 @@ def trading_card_html(player: dict[str, Any], teams_by_tid: dict[int, dict[str, 
           <h1>{esc(name)}</h1>
           {skills_html}
         </div>
-        <div class="player-card-portrait">{player_portrait(player, cls="portrait card-portrait", root=root, size=132)}</div>
+        <div class="player-card-portrait">{portrait_html(player, cls="portrait card-portrait", root=root, size=132)}</div>
       </div>
       {plate_html}
       {_card_honors_html(player)}
@@ -409,13 +412,19 @@ def trading_card_html(player: dict[str, Any], teams_by_tid: dict[int, dict[str, 
 def player_bio_html(player: dict[str, Any], teams_by_tid: dict[int, dict[str, Any]], season: int) -> str:
     """Bio facts card (sidebar): team, vitals, draft, contract, family."""
     rating = latest_rating(player, season)
-    team_html = team_label(player.get("tid"), teams_by_tid, "../")
+    prospect = _is_prospect(player)
+    # team_label renders a prospect's tid as the bare word "Draft"; point him at the
+    # board he is actually on instead, the way rostered players point at their team.
+    team_html = ('<a href="../draft.html">Draft pool</a>' if prospect
+                 else team_label(player.get("tid"), teams_by_tid, "../"))
     # Free agents are asking, not earning — say so, and quote the term with the money.
     if safe_int(player.get("tid"), RETIRED_TID) == FREE_AGENT_TID:
         term = fa_asking_term(player, season)
         contract_html = f"{fmt_money(fa_asking_price(player, season))}/yr asking"
         if term:
             contract_html += f' <span class="muted small-copy">{esc(term)}</span>'
+    elif prospect:
+        contract_html = "Unsigned"  # not "—": a prospect has no deal by definition
     else:
         contract_html = fmt_contract(player)
     born = player.get("born") or {}
@@ -425,12 +434,19 @@ def player_bio_html(player: dict[str, Any], teams_by_tid: dict[int, dict[str, An
     if born.get("loc"):
         born_bits.append(esc(born.get("loc")))
     born_html = " · ".join(born_bits) if born_bits else "—"
+    # BBGM writes round/pick 0 both for a player who truly went undrafted and for one
+    # the export never recorded a slot for — and this league's import zeroed every
+    # slot — so "Undrafted" is a claim the data cannot back. Quote the year alone when
+    # the slot is unknown, and for a prospect the year is the class he is eligible in,
+    # not a draft he has already been through.
     draft = player.get("draft") or {}
-    if draft and draft.get("year"):
-        if draft.get("round") and draft.get("pick"):
-            draft_html = f"{draft.get('year')} · Round {draft.get('round')}, Pick {draft.get('pick')}"
-        else:
-            draft_html = f"{draft.get('year')} · Undrafted"
+    draft_year = draft.get("year")
+    if prospect and draft_year:
+        draft_html = f'<a href="../draft.html">Class of {esc(draft_year)}</a>'
+    elif draft_year and draft.get("round") and draft.get("pick"):
+        draft_html = f"{esc(draft_year)} · Round {esc(draft.get('round'))}, Pick {esc(draft.get('pick'))}"
+    elif draft_year:
+        draft_html = esc(draft_year)
     else:
         draft_html = "—"
 
@@ -454,10 +470,13 @@ def player_bio_html(player: dict[str, Any], teams_by_tid: dict[int, dict[str, An
         detail_item("Weight", f'{esc(player.get("weight", "—"))} lbs' if player.get("weight") else "—"),
         detail_item("Born", born_html),
         detail_item("College", esc(player.get("college") or "—")),
-        detail_item("Draft", esc(draft_html)),
+        detail_item("Draft", draft_html),
         detail_item("Contract", contract_html),
         detail_item("Injury", injury_html(player)),
-        detail_item("Mood", mood_html(player)),
+        # Mood traits are a signing lever the export only carries for signed players;
+        # a prospect's row would be a dash that never means anything. Drop it, the
+        # way Family is dropped when there are no relatives.
+        detail_item("Mood", mood_html(player)) if player.get("moodTraits") else "",
         family_html,
     ])
 
@@ -490,8 +509,10 @@ def _pct_badge(key: str, label: str, rating: dict[str, Any], ramps: dict[str, li
 def player_ratings_html(player: dict[str, Any], season: int,
                         ramps: dict[str, list[float]] | None = None) -> str:
     """Current-ratings card: Overall/Potential topline plus the 15 subratings, each
-    with a green/red delta vs last season and a percentile vs the rostered players."""
+    with a percentile vs the rostered players and — once there is an earlier ratings
+    row to compare against — a green/red delta vs last season."""
     rating = latest_rating(player, season)
+    has_prev = bool(previous_rating(player, rating))
     ramps = ramps or {}
     rating_groups_html = []
     for title, keys in RATING_GROUPS:
@@ -510,16 +531,22 @@ def player_ratings_html(player: dict[str, Any], season: int,
         </div>
         """)
 
-    note = "green/red = vs last season"
+    # Only describe legends the card actually draws. In year one nobody has a prior
+    # ratings row, so "green/red = vs last season" would be a key to a color that
+    # appears nowhere on any of the 1,200 pages.
+    notes = []
+    if has_prev:
+        notes.append("green/red = vs last season")
     if ramps.get("ovr"):
-        note += f" · chip = percentile of the {len(ramps['ovr'])} rostered players"
+        notes.append(f"chip = percentile of the {len(ramps['ovr'])} rostered players")
+    note_html = f'<span class="muted small-copy">{esc(" · ".join(notes))}</span>' if notes else ""
     return f"""
     <section class="card ratings-current">
-      <div class="section-title-row"><h2>Current Ratings</h2><span class="muted small-copy">{esc(note)}</span></div>
+      <div class="section-title-row"><h2>Current Ratings</h2>{note_html}</div>
       <div class="rating-panel full-rating-panel">
         <div class="rating-topline">
-          <div class="big-rating"><span>Overall</span><strong>{_delta_titled(player, 'ovr', rating)}{_pct_badge('ovr', 'Overall', rating, ramps)}</strong></div>
-          <div class="big-rating"><span>Potential</span><strong>{_delta_titled(player, 'pot', rating)}{_pct_badge('pot', 'Potential', rating, ramps)}</strong></div>
+          <div class="big-rating"><span>Overall</span><strong>{_delta_titled(player, 'ovr', rating, has_prev)}{_pct_badge('ovr', 'Overall', rating, ramps)}</strong></div>
+          <div class="big-rating"><span>Potential</span><strong>{_delta_titled(player, 'pot', rating, has_prev)}{_pct_badge('pot', 'Potential', rating, ramps)}</strong></div>
         </div>
         <div class="rating-groups">{''.join(rating_groups_html)}</div>
       </div>
@@ -1006,9 +1033,12 @@ def ratings_table(player: dict[str, Any], start_season: int) -> str:
         ) or "—"
         cells.append(td(skills, sort=" ".join(codes)))
         rows.append("".join(cells))
+    # Count pill, like every other table on the page: a one-row "Season by Season"
+    # then reads as a career that has only started, not as a table that failed to load.
+    count = f'{len(ratings)} season{"" if len(ratings) == 1 else "s"} on record'
     return f"""
     <section class="card stats-section">
-      <div class="section-title-row"><h2>Season by Season</h2></div>
+      <div class="section-title-row"><h2>Season by Season</h2><span class="count-pill">{esc(count)}</span></div>
       {table_html(headers, rows, table_id=f"ratings-{player.get('pid')}", empty_message="No ratings from the selected seasons.")}
     </section>
     """
@@ -1280,6 +1310,22 @@ def contract_summary_html(player: dict[str, Any], season: int) -> str:
     is_fa = tid == FREE_AGENT_TID
     rostered = tid >= 0
 
+    if _is_prospect(player):
+        # A prospect has no contract, no salary rows and no games, so the tile grid
+        # rendered as a single "Current deal —". Say what is true and where it changes
+        # instead of standing an empty shell up on 745 pages.
+        draft_year = (player.get("draft") or {}).get("year")
+        when = (f'the <a href="../draft.html">{esc(draft_year)} draft</a>' if draft_year
+                else '<a href="../draft.html">the draft</a>')
+        class_note = (f'<span class="muted small-copy">Class of {esc(draft_year)}</span>'
+                      if draft_year else "")
+        return f"""
+    <section class="card compact-card">
+      <div class="section-title-row"><h2>Contract</h2>{class_note}</div>
+      <p class="muted small-copy">Unsigned. No deal, salary history or games on record until {when}.</p>
+    </section>
+    """
+
     tiles = []
     if is_fa:
         # One asking price for the whole site: the free-agency board, the draft pool and
@@ -1447,8 +1493,13 @@ def render_player_pages(player: dict[str, Any], teams: list[dict[str, Any]], sea
     contract_sections = [
         _section_head("Contract & Injuries"),
         contract_summary_html(player, season),
-        '<div class="history-row">' + salary_history_html(player, season) + injury_history_html(player) + "</div>",
     ]
+    # Free agents and prospects have neither a salary ledger nor an injury log, so the
+    # flex row wrapping them was emitted empty on over a thousand pages. Only wrap
+    # cards that exist.
+    history = salary_history_html(player, season) + injury_history_html(player)
+    if history:
+        contract_sections.append(f'<div class="history-row">{history}</div>')
     body_parts.append(f'<div class="player-section" id="contract">{"".join(contract_sections)}</div>')
 
     # Scope wrapper: carries the team identity vars so section accents below

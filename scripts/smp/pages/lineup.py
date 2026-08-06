@@ -4,18 +4,22 @@ from __future__ import annotations
 build the bench too — then see the projected lineup overall, win odds against
 every real roster, and the salary bill.
 
-The page is a static shell — all data comes from assets/app-data.json, all math
-runs client-side in static/js/lineup.js (via the shared window.SMPOvr port of
-the projections.py team_ovr weighting; parity is asserted by
-tests/test_tools_pages.py). Ten combobox slots are rendered; the five bench
-slots stay hidden until 10-man mode. The shell degrades to a useful no-JS
-message.
+The page is a near-static shell — the tool's data comes from
+assets/app-data.json and all its math runs client-side in static/js/lineup.js
+(via the shared window.SMPOvr port of the projections.py team_ovr weighting;
+parity is asserted by tests/test_tools_pages.py). Ten combobox slots are
+rendered; the five bench slots stay hidden until 10-man mode. The one
+server-rendered figure is the field strip under Matchups, which uses the same
+team_ovr formula so the numbers survive the handover to the live table. The
+shell degrades to a useful no-JS message.
 """
 
 from typing import Any
 
-from ..core import esc, page_html
+from ..core import active_teams_for_season, esc, page_html, safe_int, team_abbrev, team_full_name, team_url
 from ..finance import FIN_SOFT_CAP
+from ..identity import team_css_vars
+from ..simmodel import current_team_ovr
 
 
 def _slot_html(i: int) -> str:
@@ -46,6 +50,46 @@ def _mode_toggle() -> str:
         <div class="ll-segs" role="radiogroup" aria-label="Lineup size">
           <label class="ll-seg"><input type="radio" name="ll-mode" value="5" checked data-ll-mode><span>5-man</span></label>
           <label class="ll-seg"><input type="radio" name="ll-mode" value="10" data-ll-mode><span>10-man</span></label>
+        </div>"""
+
+
+def _field_html(teams: list[dict[str, Any]], players: list[dict[str, Any]], season: int) -> str:
+    """The ten rosters and their projected overall — the Matchups card's resting state.
+
+    Until five players are picked the client can only say "pick five players", which
+    left a whole card carrying one sentence. The opponents are known before anyone
+    touches the tool, so the card shows them, ranked the way the matchup board will
+    rank them. Overalls come from simmodel.current_team_ovr (projections.team_ovr),
+    the same formula lineup.js ports, so the numbers do not move when the real table
+    replaces this. tools.css hides the strip once that table exists.
+    """
+    roster_by_tid: dict[int, list[dict[str, Any]]] = {}
+    for player in players:
+        tid = safe_int(player.get("tid"), -1)
+        if tid >= 0:
+            roster_by_tid.setdefault(tid, []).append(player)
+    rows = []
+    for team in active_teams_for_season(teams, season):
+        tid = safe_int(team.get("tid"), -1)
+        ovr = current_team_ovr(roster_by_tid.get(tid, []), season)
+        if ovr is None:
+            continue
+        rows.append((ovr, tid, team))
+    if not rows:
+        return ""
+    rows.sort(key=lambda row: (-row[0], row[1]))
+    items = "".join(
+        f'<li class="ll-field-row"><a class="team-chip ll-chip" style="{team_css_vars(tid)}" '
+        f'href="{team_url(team)}"><span class="team-chip-dot" aria-hidden="true"></span>'
+        f'{esc(team_abbrev(team))}</a>'
+        f'<span class="ll-field-name">{esc(team_full_name(team))}</span>'
+        f'<span class="ll-field-ovr">{ovr}</span></li>'
+        for ovr, tid, team in rows
+    )
+    return f"""
+        <div class="ll-field">
+          <p class="ll-field-title muted small-copy">The field · projected team overall, strongest first</p>
+          <ul class="ll-field-list">{items}</ul>
         </div>"""
 
 
@@ -99,6 +143,7 @@ def render_lineup_page(
         <div data-ll-matchups>
           <p class="muted">Pick five players to see the matchup board.</p>
         </div>
+        {_field_html(teams, players, season)}
       </section>
     </div>
     """

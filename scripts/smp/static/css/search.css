@@ -9,8 +9,9 @@
   color: var(--text);
   font: inherit;
   font-size: .82rem;
-  outline: none;
 }
+/* Accent border on focus is affordance; the global :focus-visible ring is the
+   actual keyboard indicator and must not be suppressed here. */
 .nav-search input:focus { border-color: var(--accent); }
 .search-results {
   position: absolute;
@@ -23,7 +24,7 @@
   border: 1px solid var(--line);
   border-radius: .15rem;
   background: var(--panel);
-  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  box-shadow: var(--shadow);
 }
 .search-results a {
   display: flex;
@@ -55,7 +56,7 @@
   border: 1px solid var(--line);
   border-radius: .25rem;
   background: var(--panel);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, .5);
+  box-shadow: var(--shadow-lg);
 }
 .palette-input {
   width: 100%;
@@ -105,7 +106,7 @@
   border: 1px solid var(--line);
   border-radius: .15rem;
   background: var(--panel);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+  box-shadow: var(--shadow);
 }
 .smp-combobox-list[hidden] { display: none; }
 .smp-cbx-opt {

@@ -15,6 +15,16 @@
   --warn: #d9a441;
   --warn-soft: rgba(217, 164, 65, .14);
   --focus: #9bc5ff;
+  /* Surfaces and rules that only ever appeared as raw literals before: the
+     zebra stripe sits between --panel and --panel-2, and the two rule weights
+     are the hairline inside a table body and the divider between column
+     groups. Alpha-white literals rendered as *nothing* in the light theme. */
+  --row-alt: #1a1f26;
+  --rule: rgba(255, 255, 255, .05);
+  --rule-strong: rgba(255, 255, 255, .18);
+  /* Menus, the command palette and the mobile sheet all lift off the page. */
+  --shadow: 0 10px 30px rgba(0, 0, 0, .45);
+  --shadow-lg: 0 18px 50px rgba(0, 0, 0, .5);
   color-scheme: dark;
 }
 html[data-theme="light"] {
@@ -34,13 +44,22 @@ html[data-theme="light"] {
   --warn: #a96f00;
   --warn-soft: rgba(169, 111, 0, .12);
   --focus: #174ea6;
+  --row-alt: #f7f8fa;
+  --rule: rgba(16, 22, 32, .07);
+  --rule-strong: rgba(16, 22, 32, .22);
+  --shadow: 0 8px 24px rgba(16, 22, 32, .14);
+  --shadow-lg: 0 16px 40px rgba(16, 22, 32, .18);
   color-scheme: light;
 }
 html[data-theme="light"] .site-header { background: var(--bg); }
-html[data-theme="light"] tbody tr:nth-child(odd) { background: #f7f8fa; }
 html[data-theme="light"] .chart-tooltip { background: rgba(242, 243, 245, .96); }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
+/* .site-header is sticky, so an in-page jump (the "#" link theme.js hangs off
+   every h2) would otherwise land the target underneath it. :where() keeps this
+   at zero specificity: it is a floor, and components that already set their own
+   offset (.player-section, .wr-slide) still win. */
+:where([id]) { scroll-margin-top: 3.5rem; }
 body {
   margin: 0;
   background: var(--bg);

@@ -15,6 +15,16 @@
   --warn: #d9a441;
   --warn-soft: rgba(217, 164, 65, .14);
   --focus: #9bc5ff;
+  /* Surfaces and rules that only ever appeared as raw literals before: the
+     zebra stripe sits between --panel and --panel-2, and the two rule weights
+     are the hairline inside a table body and the divider between column
+     groups. Alpha-white literals rendered as *nothing* in the light theme. */
+  --row-alt: #1a1f26;
+  --rule: rgba(255, 255, 255, .05);
+  --rule-strong: rgba(255, 255, 255, .18);
+  /* Menus, the command palette and the mobile sheet all lift off the page. */
+  --shadow: 0 10px 30px rgba(0, 0, 0, .45);
+  --shadow-lg: 0 18px 50px rgba(0, 0, 0, .5);
   color-scheme: dark;
 }
 html[data-theme="light"] {
@@ -34,13 +44,22 @@ html[data-theme="light"] {
   --warn: #a96f00;
   --warn-soft: rgba(169, 111, 0, .12);
   --focus: #174ea6;
+  --row-alt: #f7f8fa;
+  --rule: rgba(16, 22, 32, .07);
+  --rule-strong: rgba(16, 22, 32, .22);
+  --shadow: 0 8px 24px rgba(16, 22, 32, .14);
+  --shadow-lg: 0 16px 40px rgba(16, 22, 32, .18);
   color-scheme: light;
 }
 html[data-theme="light"] .site-header { background: var(--bg); }
-html[data-theme="light"] tbody tr:nth-child(odd) { background: #f7f8fa; }
 html[data-theme="light"] .chart-tooltip { background: rgba(242, 243, 245, .96); }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
+/* .site-header is sticky, so an in-page jump (the "#" link theme.js hangs off
+   every h2) would otherwise land the target underneath it. :where() keeps this
+   at zero specificity: it is a floor, and components that already set their own
+   offset (.player-section, .wr-slide) still win. */
+:where([id]) { scroll-margin-top: 3.5rem; }
 body {
   margin: 0;
   background: var(--bg);
@@ -193,7 +212,7 @@ h2:hover .h-anchor, .h-anchor:focus-visible { opacity: 1; }
   border: 1px solid var(--line);
   border-radius: .15rem;
   background: var(--panel);
-  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  box-shadow: var(--shadow);
 }
 .team-menu a, .nav-menu a {
   display: block;
@@ -206,6 +225,21 @@ h2:hover .h-anchor, .h-anchor:focus-visible { opacity: 1; }
   text-decoration: none;
 }
 .team-menu a:hover, .team-menu a.active, .nav-menu a:hover, .nav-menu a.active { color: var(--text); background: var(--panel-2); }
+/* Below the burger breakpoint .primary-nav becomes a full-width block, so a
+   summary can sit anywhere along the row — and `right: 0` then measures from
+   the summary's right edge, not the viewport's. League opened at x = -112px on
+   a 390px phone: half the menu off-screen, labels sliced in half, nothing to
+   scroll to. Anchor these to the left edge of their own summary instead; the
+   widest item is 13rem, so they still clear the viewport. (.team-menu also
+   matches, but game.css makes it position:static here, where offsets are
+   inert.) */
+@media (max-width: 900px) {
+  .team-menu, .nav-menu {
+    right: auto;
+    left: 0;
+    max-width: calc(100vw - 1.5rem);
+  }
+}
 
 /* ---------- header controls: theme toggle + My Team picker (W10) ---------- */
 .header-controls { display: flex; flex: 0 0 auto; align-items: center; gap: .4rem; }
@@ -305,7 +339,7 @@ h2 { font-size: .8rem; font-weight: 600; letter-spacing: .07em; text-transform: 
 /* ---------- tables ---------- */
 .table-wrap { overflow-x: auto; border-radius: .15rem; border: 1px solid var(--line); }
 table { width: 100%; border-collapse: collapse; background: var(--panel); font-size: .8rem; }
-th, td { padding: .32rem .55rem; border-bottom: 1px solid rgba(255,255,255,.05); text-align: right; white-space: nowrap; }
+th, td { padding: .32rem .55rem; border-bottom: 1px solid var(--rule); text-align: right; white-space: nowrap; }
 th:first-child, td:first-child { text-align: left; position: sticky; left: 0; z-index: 2; }
 td:first-child { background: inherit; }
 th:first-child { z-index: 4; }
@@ -325,10 +359,18 @@ thead th {
 }
 table[data-sortable] thead th { cursor: pointer; }
 table[data-sortable] thead th:hover { color: var(--text); }
-table[data-sortable] thead th:focus-visible { color: var(--text); background: var(--panel-3); }
+/* Same clipping story as the tab strips below: .table-wrap is overflow-x:auto,
+   which computes overflow-y:auto too, so it clips at its padding box — and a
+   thead th sits flush against it. An outset ring loses its whole top edge (and
+   the first column loses its left edge). Draw it inside the cell. */
+table[data-sortable] thead th:focus-visible {
+  color: var(--text);
+  background: var(--panel-3);
+  outline-offset: -2px;
+}
 thead th.sort-asc::after { content: " ↑"; color: var(--accent); }
 thead th.sort-desc::after { content: " ↓"; color: var(--accent); }
-tbody tr:nth-child(odd) { background: #1a1f26; }
+tbody tr:nth-child(odd) { background: var(--row-alt); }
 tbody tr:nth-child(even) { background: var(--panel); }
 tbody tr:hover { background: var(--panel-3); }
 tbody tr:last-child td { border-bottom: 0; }
@@ -355,8 +397,9 @@ tr.avg-row > td { border-top: 1px solid var(--line); color: var(--muted); font-s
   color: var(--text);
   font: inherit;
   font-size: .85rem;
-  outline: none;
 }
+/* The accent border is affordance, not a focus indicator — the global
+   :focus-visible ring has to survive, so no outline:none here. */
 .table-search:focus { border-color: var(--accent); }
 .empty-state { margin: .6rem 0 0; color: var(--muted); font-size: .85rem; }
 .select-label { display: flex; align-items: center; gap: .5rem; color: var(--muted); font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; }
@@ -406,6 +449,13 @@ tr.avg-row > td { border-top: 1px solid var(--line); color: var(--muted); font-s
 }
 .tabs button:first-child { border-left: 0; }
 .tabs button[aria-selected="true"] { background: var(--panel-3); color: var(--text); }
+/* Both strips clip to their rounded box, which swallows an outset focus ring
+   entirely — the buttons are flush with the container's padding edge. Draw the
+   ring inside the button instead so keyboard focus is actually visible. */
+.tabs button:focus-visible, .view-toggle button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -3px;
+}
 [data-tab-panel][hidden] { display: none; }
 #players-index .col-adv, #players-index .col-p36, #players-index .col-rate { display: none; }
 #players-index.show-adv .col-adv { display: table-cell; }
@@ -479,7 +529,10 @@ tbody td { font-variant-numeric: tabular-nums; }
 .schedule-grid td:first-child, .schedule-grid th:first-child { text-align: center; }
 .schedule-grid td { padding: .18rem .3rem; }
 .day-label { color: var(--muted); font-variant-numeric: tabular-nums; }
-.off-day { background: rgba(255,255,255,.015); }
+/* Same translucent veil as the table hairline — a team with no game reads as a
+   knocked-back cell in both themes, rather than the old alpha-white that the
+   light theme rendered as nothing at all. */
+.off-day { background: var(--rule); }
 .sched-cell { display: block; padding: .12rem .25rem; border-radius: .15rem; color: var(--text); font-size: .76rem; line-height: 1.25; text-decoration: none; }
 .sched-cell:hover { background: var(--panel-3); text-decoration: none; }
 .sched-result { display: block; font-size: .68rem; font-variant-numeric: tabular-nums; }
@@ -495,10 +548,12 @@ tbody td { font-variant-numeric: tabular-nums; }
   text-transform: none;
   color: var(--text);
 }
-th.group-start, td.group-start { border-left: 2px solid rgba(255,255,255,.18); }
-td.cur-season, th.cur-season { background: rgba(91,157,255,.07); }
-thead th.cur-season { background: rgba(91,157,255,.14); color: var(--text); }
-tr.total-row td.cur-season { background: rgba(91,157,255,.12); }
+th.group-start, td.group-start { border-left: 2px solid var(--rule-strong); }
+/* Current-season columns tint with the live accent, so they follow the light
+   theme and the My Team accent override instead of staying fixed blue. */
+td.cur-season, th.cur-season { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+thead th.cur-season { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text); }
+tr.total-row td.cur-season { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 /* identity.css — shared team-identity primitives: monogram roundels,
    award crests, team chips. Colors come from --team-* vars emitted by
@@ -603,7 +658,7 @@ tr.total-row td.cur-season { background: rgba(91,157,255,.12); }
   transition: border-color .12s ease, opacity .12s ease;
 }
 .chart-legend button:hover { border-color: color-mix(in srgb, var(--dot, var(--accent)) 65%, var(--line)); }
-.chart-legend button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chart-legend button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .chart-legend button .dot { width: .58rem; height: .58rem; border-radius: 50%; background: var(--dot, var(--muted)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 20%, transparent); }
 .chart-legend button.off { opacity: .38; }
 .chart-legend button.off .dot { background: var(--muted); }
@@ -632,13 +687,20 @@ tr.total-row td.cur-season { background: rgba(91,157,255,.12); }
   gap: .6rem;
   padding: .3rem .45rem;
   background: var(--panel-2);
-  border: 1px solid rgba(255,255,255,.04);
+  /* --line, not a white alpha: a white hairline is invisible on the light theme's
+     panels, so the Bio rows lost their edges entirely under html[data-theme=light]. */
+  border: 1px solid var(--line);
   border-radius: .15rem;
   font-size: .8rem;
 }
 .detail-item span { color: var(--muted); }
 .detail-item strong { text-align: right; font-weight: 600; }
 .rating-panel { display: grid; gap: .6rem; }
+/* Two tracks, not three. Matching .rating-groups below lines the boxes up with
+   Physical and Shooting, but there is no third headline number to fill the track
+   over Skill, so it left a 333px hole in the card that reads as a tile that failed
+   to load. A wide label-to-number row is the same idiom as .rating-row and
+   .detail-item; a missing tile is not. */
 .rating-topline { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
 .big-rating {
   display: flex;
@@ -655,7 +717,7 @@ tr.total-row td.cur-season { background: rgba(91,157,255,.12); }
 .rating-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; }
 .rating-group {
   padding: .55rem .6rem;
-  border: 1px solid rgba(255,255,255,.05);
+  border: 1px solid var(--line);  /* see .detail-item: a white alpha vanishes in light */
   border-radius: .15rem;
   background: var(--panel-2);
 }
@@ -820,6 +882,22 @@ tr.total-row td.cur-season { background: rgba(91,157,255,.12); }
   object-fit: cover;
   object-position: top;
 }
+/* Draft prospects carry no photo, so their portrait is a pre-rendered facesjs SVG:
+   a 2:3 standing figure, not a square headshot. Cover-cropping one to 132x132 sliced
+   it off below the mouth on all 745 prospect pages. Fit the whole figure into a 2:3
+   slot of the same height so it stands on the nameplate instead. The suffix match is
+   the only tell available — photos are .png/.jpg, face renders are always .svg — and
+   it also catches the runtime swap portraits.py does when a hot-linked photo 404s. */
+.player-card-portrait .card-portrait[src$=".svg"] {
+  width: 88px;
+  object-fit: contain;
+  object-position: bottom;
+}
+/* A dead photo with no face render falls back to the inline monogram roundel.
+   identity.css sizes .monogram for chips (2.5rem), so without this the hero slot
+   showed a 40px disc marooned in a 132px box. */
+.player-card-portrait .portrait-monogram { display: grid; place-items: end center; }
+.player-card-portrait .portrait-monogram .monogram { width: 100%; height: 100%; }
 /* Nameplate: position chip + team + age (+ FA asking price). */
 .player-card-plate {
   display: flex;
@@ -963,11 +1041,15 @@ tr.total-row td.cur-season { background: rgba(91,157,255,.12); }
 .career-dot--now { outline: 2px solid var(--accent); outline-offset: 1px; }
 a.career-dot:hover { transform: scale(1.18); }
 @media (max-width: 700px) {
-  .player-card-face { flex-direction: column; align-items: flex-start; min-height: 0; }
-  .player-card-body { padding-top: 2.1rem; }
-  .player-card h1 { font-size: 1.5rem; }
-  .player-card-portrait { align-self: flex-end; margin-top: -1.25rem; }
+  /* Keep the desktop composition and shrink it. Stacking the portrait under the
+     nameplate left an L-shaped void either side of both and pushed a near-empty
+     220px hero onto a 390px phone; side by side the same card is 128px and full. */
+  .player-card-face { gap: .6rem; padding: .9rem 1.1rem 0; min-height: 128px; }
+  .player-card-body { padding: 1.9rem 0 .7rem; }
+  .player-card h1 { font-size: 1.4rem; }
+  .player-card-num { top: .8rem; font-size: 1.2rem; }
   .player-card-portrait .card-portrait { width: 104px; height: 104px; }
+  .player-card-portrait .card-portrait[src$=".svg"] { width: 70px; }
   .plate-ask { margin-left: 0; width: 100%; }
 }
 
@@ -1173,7 +1255,10 @@ tr.salary-future td .salary-note { color: var(--muted); }
 .ledger-table { width: 100%; border-collapse: collapse; font-size: .86rem; }
 .ledger-table th { text-align: right; color: var(--muted); font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; padding: .35rem .5rem; border-bottom: 1px solid var(--line); }
 .ledger-table th:first-child { text-align: left; }
-.ledger-table td { padding: .3rem .5rem; border-bottom: 1px solid rgba(255,255,255,.04); }
+/* --rule, not a literal white hairline: the hard-coded rgba(255,255,255,.04)
+   was invisible on the light theme's white card, so the ledger lost every row
+   separator between "Win payouts" and the total. --rule flips with the theme. */
+.ledger-table td { padding: .3rem .5rem; border-bottom: 1px solid var(--rule); }
 .ledger-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ledger-table tr.ledger-subtotal td { border-top: 1px solid var(--line); font-weight: 600; }
 .ledger-table tr.ledger-total td { border-top: 2px solid var(--line); font-size: 1rem; padding-top: .5rem; }
@@ -1182,9 +1267,11 @@ tr.salary-future td .salary-note { color: var(--muted); }
 @media (max-width: 700px) { .fin-rules { grid-template-columns: 1fr; } }
 .fin-rules h3 { margin: 0 0 .4rem; font-size: .82rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 .fin-list { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .25rem; font-size: .86rem; }
-/* roster role dividers: heavier line after Starters (5) and Bench (10) on the default Stats table */
-#roster-stats tbody tr:nth-child(5) > *,
-#roster-stats tbody tr:nth-child(10) > * { border-bottom: 2px solid var(--line); }
+/* No role dividers on the Players table. A heavier rule after rows 5 and 10
+   claimed a Starters / Bench / Reserve split that the table's own column sort
+   and position filter falsify on the first click — nth-child follows whatever
+   order the rows are in and counts filtered-out rows. The Depth Chart card
+   directly below owns that split and states it explicitly. */
 
 
 /* ---------- W2 team immersion: identity scope, stripe, watermark, rafters ---------- */
@@ -1286,7 +1373,11 @@ html[data-theme="light"] .tm-watermark { color: var(--team-primary, var(--muted)
   .tm-rafters { flex-wrap: wrap; justify-content: flex-start; gap: .7rem; padding: 0 1rem; border-top-width: 4px; }
   .banner--title { width: 3.8rem; }
   .banner--finals { width: 2.6rem; }
-  .tm-watermark { font-size: 5rem; }
+  /* The hero stacks at this width, so the payroll chip covers the abbrev and
+     all that clears it is a row of clipped letter-tops — which reads as a
+     rendering fault rather than a watermark, badly so on the light theme.
+     Nothing is lost by dropping the decoration on a phone. */
+  .tm-watermark { display: none; }
 }
 
 /* show-inactive roster toggle: 0-GP rows are VISIBLE (dimmed) by default;
@@ -1313,12 +1404,23 @@ html[data-theme="light"] .tm-watermark { color: var(--team-primary, var(--muted)
 .button-link.disabled { opacity: .45; pointer-events: none; }
 .box-score-hero {
   display: grid;
-  grid-template-columns: auto minmax(0, 48rem) auto;
+  /* The side tracks must be EQUAL, not content-sized: the matchup line is the
+     hero's centre and the split background's seam is drawn at 50%, so a prev
+     pager wider than the next one (the season's first game reads "First game of
+     the season" opposite "Day 1 · CAM @ WAL") slid the whole scoreboard off the
+     seam. A shared floor plus 1fr keeps both tracks identical at every width:
+     with slack they grow together, without slack they sit at the same floor.
+     10rem clears the longest pager caption; below 900px the grid is one column. */
+  grid-template-columns: minmax(10rem, 1fr) minmax(0, 48rem) minmax(10rem, 1fr);
   align-items: center;
   justify-content: center;
   gap: .75rem;
   margin-bottom: .75rem;
 }
+/* ...and inside those equal tracks the pagers hug the scoreboard rather than
+   floating in the middle of the empty side. */
+.gx-hero .game-pager { justify-self: end; }
+.gx-hero .game-pager:last-child { justify-self: start; }
 .scoreboard-core { text-align: center; }
 .scoreboard-core h1 {
   font-size: 1.1rem;
@@ -1359,13 +1461,24 @@ html[data-theme="light"] .tm-watermark { color: var(--team-primary, var(--muted)
   pointer-events: none;
   background: color-mix(in srgb, var(--gx-side) 28%, var(--panel));
 }
-.gx-bg-away { --gx-side: var(--gx-away-primary); clip-path: polygon(0 0, 57.6% 0, 45.6% 100%, 0 100%); }
-.gx-bg-home { --gx-side: var(--gx-home-primary); clip-path: polygon(58.4% 0, 100% 0, 100% 100%, 46.4% 100%); }
+/* The seam is centred on 50% — the matchup line, the scores and the projection
+   block are all centred, and the old 58%/46% split put the home team's name on
+   the away team's colour. The two halves overlap by .4% instead of leaving a
+   gap: the gap showed the panel through as a bright diagonal slash in the light
+   theme, straight across the projection block. */
+.gx-bg-away { --gx-side: var(--gx-away-primary); clip-path: polygon(0 0, 53.2% 0, 47.2% 100%, 0 100%); }
+.gx-bg-home { --gx-side: var(--gx-home-primary); clip-path: polygon(52.8% 0, 100% 0, 100% 100%, 46.8% 100%); }
 .gx-bg.gx-won { background: color-mix(in srgb, var(--gx-side) 38%, var(--panel)); }
 .gx-bg.gx-lost {
   background: color-mix(in srgb, var(--gx-side) 12%, var(--panel));
   filter: saturate(.45);
 }
+/* Team colours are dark by design, so the same mix that reads as a tint over a
+   dark panel reads as a saturated pastel block over a white one. Match the
+   weight, not the number. */
+html[data-theme="light"] .gx-hero .gx-bg { background: color-mix(in srgb, var(--gx-side) 15%, var(--panel)); }
+html[data-theme="light"] .gx-hero .gx-bg.gx-won { background: color-mix(in srgb, var(--gx-side) 22%, var(--panel)); }
+html[data-theme="light"] .gx-hero .gx-bg.gx-lost { background: color-mix(in srgb, var(--gx-side) 7%, var(--panel)); }
 .scoreboard-core h1.gx-matchup {
   align-items: stretch;
   gap: .9rem;
@@ -1427,6 +1540,17 @@ a.gx-team-name:hover { text-decoration: underline; }
 .gx-win-row td { font-weight: 700; }
 .gx-win-tick { color: var(--good); font-weight: 700; }
 .gx-pager { flex-direction: column; gap: .05rem; line-height: 1.3; padding: .35rem .6rem; }
+/* The dead pager carries a reason now ("First game of the season"), and that is
+   information, not chrome. .button-link.disabled dims the whole box to 45%,
+   which stacked on --muted lands the caption near 1.8:1 against a light panel —
+   so state it with tokens instead of alpha: no fill, softer rule, muted ink.
+   Still obviously inert next to a live pager, still pointer-events: none. */
+.gx-pager.disabled {
+  opacity: 1;
+  color: var(--muted);
+  background: none;
+  border-color: color-mix(in srgb, var(--line) 65%, transparent);
+}
 .gx-pager-ctx { font-size: .66rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
 .gx-dnp { margin: .4rem 0 0; }
 .gx-dnp a { color: var(--muted); }
@@ -1439,8 +1563,10 @@ a.gx-team-name:hover { text-decoration: underline; }
   padding: .6rem .85rem .5rem;
   border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
   border-radius: .25rem;
-  background: color-mix(in srgb, var(--panel) 72%, transparent);
-  backdrop-filter: blur(2px);
+  /* Near-opaque, not frosted: a blurred translucent pane over the team colours
+     was the one piece of glass on the site, and it let the hero's seam show
+     through the numbers. */
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
 }
 .gx-proj-nums {
   display: flex;
@@ -1487,6 +1613,37 @@ a.gx-team-name:hover { text-decoration: underline; }
 .gx-proj-fill-away + .gx-proj-fill-home { border-left: 2px solid var(--panel); }
 .gx-proj-caption { margin: .45rem 0 0; text-align: center; }
 
+/* ---------- gx-rot / gx-matchup-body: the preview's two real panels ---------- */
+/* The comparison table is a fixed ~21rem however wide the card is. Putting the
+   injury report beside it fills the card instead of stranding a screen of empty
+   panel to its right. */
+.gx-matchup-body {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: .6rem 1.5rem;
+  align-items: start;
+}
+.gx-matchup-body .preview-injuries { margin-top: 0; }
+
+/* Both projected rotations side by side: two short tables read as a comparison,
+   and stacked full-width they would repeat the dead space they replaced.
+   auto-fit, not repeat(2): a six-column rotation table needs ~34rem before the
+   name cell (number + name + up to seven skill chips) starts scrolling, and a
+   forced two-up put a horizontal scrollbar inside one of two adjacent tables at
+   1024px — the width where the comparison matters most. Stacked beats clipped. */
+.gx-rots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(34rem, 1fr));
+  gap: .75rem;
+  align-items: start;
+  margin-bottom: .75rem;
+}
+.gx-rots .box-team-section { margin-bottom: 0; }
+.gx-rot-cap { margin: 0 0 .4rem; }
+.gx-rot-table { font-variant-numeric: tabular-nums; }
+.gx-rot-imp { color: var(--text); font-weight: 600; }
+.gx-rot-reserves { margin: .35rem 0 0; }
+
 @media (max-width: 900px) {
   .site-header { flex-direction: column; align-items: flex-start; }
   .nav-search { flex: none; width: 100%; }
@@ -1508,6 +1665,16 @@ a.gx-team-name:hover { text-decoration: underline; }
   .gx-team-name { font-size: .92rem; }
   .gx-score { font-size: 1.5rem; }
   .gx-pager-ctx { white-space: normal; }
+  .gx-hero .game-pager, .gx-hero .game-pager:last-child { justify-self: start; }
+  /* minmax(0, 1fr), never a bare 1fr: a grid track's automatic minimum is the
+     item's min-content, so a single-column stack of a rotation table floored
+     the track at the table's natural ~550px and scrolled the whole PAGE
+     sideways by ~170px on a phone. Zero minimum puts the scrolling back inside
+     .table-wrap, where the sticky name column is built for it. */
+  .gx-matchup-body { grid-template-columns: minmax(0, 1fr); }
+  .gx-matchup-body .preview-injuries { margin-top: .3rem; }
+  .gx-rots { grid-template-columns: minmax(0, 1fr); }
+  .gx-rots .box-team-section { margin-bottom: .25rem; }
 }
 
 /* ---------- home dashboard ---------- */
@@ -1579,6 +1746,18 @@ a.gx-team-name:hover { text-decoration: underline; }
 .leader-mini-table tbody tr, .leader-mini-table tbody tr:nth-child(odd), .leader-mini-table tbody tr:nth-child(even) { background: transparent; }
 .leader-list { list-style: none; margin: 0; padding: 0; }
 .leader-list li { display: flex; align-items: center; gap: .4rem; padding: .16rem 0; font-size: .8rem; }
+/* These lists are written for the 30%-wide rail, where a row is rank + name on
+   the left and the value hard right. Below 1150px the rail cards become
+   full-width cards and the same row stretches to the page: name at one edge,
+   number at the other, half a screen of nothing between. Wrap into as many
+   rail-width columns as fit instead. min() keeps the track from outgrowing a
+   narrow phone; the boxed lists on the records page are nested inside
+   .leader-box, so they are untouched. */
+.home-section > .leader-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(19rem, 100%), 1fr));
+  column-gap: 1.1rem;
+}
 .leader-rank { color: var(--muted); min-width: .9rem; text-align: right; font-variant-numeric: tabular-nums; }
 .leader-team { color: var(--muted); font-size: .7rem; }
 .leader-value { margin-left: auto; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -1615,7 +1794,19 @@ tr.next-day > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 
 /* ---------- phase-aware home (hm-) ---------- */
 .hm-banner-row { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
-.hm-banner-title { margin: 0; font-size: 1.05rem; }
+/* The banner headline is the only card title on the site that is a sentence, and
+   the global h2 rule (uppercase, .07em tracking, --muted) is tuned for two-word
+   column labels: it turned "The 2004 season hasn't tipped off yet" into grey
+   letter-spaced capitals with a stranded apostrophe. Sentence case, full text
+   colour — the page has no other visible h1. */
+.hm-banner-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+}
 .hm-phase-pill {
   display: inline-flex;
   align-items: center;
@@ -1631,7 +1822,10 @@ tr.next-day > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 }
 .hm-banner-note { margin: .4rem 0 0; }
 .hm-digest-summary { margin: 0 0 .3rem; }
-.hm-pick { font-size: .68rem; white-space: nowrap; }
+/* A bare "1.03" in a rookie row is only legible if the reader knows to hover:
+   the caption-tooltip rule below is scoped to the title row, so this borrows
+   the other convention on the site (.hrg-age) and just changes the cursor. */
+.hm-pick { font-size: .68rem; white-space: nowrap; cursor: help; }
 .hm-award-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: .6rem; }
 .hm-award {
   display: flex;
@@ -1770,14 +1964,14 @@ a.gp-card:hover .gp-more, a.gp-card:focus-visible .gp-more { color: var(--accent
    than the page, so the whole grid scrolls inside itself with the team column
    pinned to the left edge; the cells are fixed-width tracks, which keeps the
    columns lined up across rows even when a team carries fewer than twelve. */
-.hrg-scroll { overflow-x: auto; }
+.hrg-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
 .hrg-row { display: flex; align-items: stretch; width: max-content; }
 .hrg-row + .hrg-row { border-top: 1px solid var(--line); }
 .hrg-team {
   position: sticky;
   left: 0;
   z-index: 2;
-  flex: 0 0 9.5rem;
+  flex: 0 0 10.5rem;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -1789,19 +1983,20 @@ a.gp-card:hover .gp-more, a.gp-card:focus-visible .gp-more { color: var(--accent
   font-size: .78rem;
 }
 .hrg-team-name { display: flex; align-items: center; min-width: 0; }
-.hrg-team-name .player-link {
-  min-width: 0;
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* The two longest team names (Cambridge Platypuses, Stony Brook Stingrays) ran
+   past the old 9.5rem column and were ellipsised on the league's own roster
+   board. The column now fits all ten, and the name may still wrap rather than
+   clip if a longer one ever joins — or at the narrow mobile flex-basis. */
+.hrg-team-name .player-link { min-width: 0; font-weight: 700; overflow-wrap: anywhere; }
 .hrg-count { font-size: .64rem; letter-spacing: .04em; }
-.hrg-cells { display: grid; grid-auto-flow: column; grid-auto-columns: 9.5rem; gap: .35rem; padding: .3rem 0 .3rem .35rem; }
+.hrg-cells { display: grid; grid-auto-flow: column; grid-auto-columns: 10.5rem; gap: .35rem; padding: .3rem 0 .3rem .35rem; }
 .hrg-cell {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   grid-template-areas: "face id" "line line";
+  /* The identity block takes the slack so the stat lines sit on one baseline
+     across a row even where a name has wrapped to two lines. */
+  grid-template-rows: 1fr auto;
   align-items: center;
   gap: .25rem .45rem;
   min-width: 0;
@@ -1837,7 +2032,19 @@ a.hrg-cell:hover, a.hrg-cell:focus-visible { border-color: var(--team-secondary,
   letter-spacing: .07em;
 }
 .hrg-age { font-variant-numeric: tabular-nums; letter-spacing: 0; cursor: help; }
-.hrg-name { font-size: .76rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* One line where it fits, two where it does not. On a single nowrap line a
+   quarter of the league (29 of 120 — every Abdur-Rahim and Richardson) was
+   ellipsised mid-word on a card whose whole job is naming all 120 men. */
+.hrg-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: .76rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
 .hrg-line {
   grid-area: line;
   display: grid;
@@ -1849,11 +2056,15 @@ a.hrg-cell:hover, a.hrg-cell:focus-visible { border-color: var(--team-secondary,
 .hrg-stat strong { font-size: .72rem; font-variant-numeric: tabular-nums; }
 .hrg-stat small { color: var(--muted); font-size: .55rem; font-weight: 700; letter-spacing: .04em; }
 /* Nobody has played yet: the line is still a stat line, just switched off, so
-   120 cards of em-dashes read as one quiet state instead of 600 loud dashes. */
-.hrg-line--empty { opacity: .55; border-top-style: dashed; }
+   120 cards of em-dashes read as one quiet state instead of 600 loud dashes.
+   Dropping the values to --muted does that; the blanket opacity: .55 it replaces
+   also dimmed the 8.8px PTS/REB/AST labels, and in preseason that is every label
+   on the card sitting under 3:1 in both themes. */
+.hrg-line--empty { border-top-style: dashed; }
+.hrg-line--empty .hrg-stat strong { color: var(--muted); font-weight: 400; }
 @media (max-width: 820px) {
-  .hrg-team { flex-basis: 6.75rem; font-size: .72rem; }
-  .hrg-cells { grid-auto-columns: 8.6rem; }
+  .hrg-team { flex-basis: 7.5rem; font-size: .72rem; }
+  .hrg-cells { grid-auto-columns: 9.25rem; }
   .hrg-portrait { width: 2rem; height: 2rem; }
 }
 
@@ -1995,6 +2206,46 @@ a.depth-card:hover { border-color: var(--team-secondary, var(--accent)); text-de
 @media (max-width: 820px) {
   .depth-portrait-wrap { width: 3.5rem; height: 3.5rem; }
 }
+/* ---------- history page: franchise file + redraft board ----------
+   Year one has no seasons to chart, so the History page carries the two things
+   that do exist: the franchise's charter facts and the draft that built it. */
+.tm-swatches { display: inline-flex; gap: .25rem; vertical-align: -.1em; }
+.tm-swatch {
+  display: inline-block;
+  width: .95rem;
+  height: .95rem;
+  border: 1px solid var(--line);
+  border-radius: .12rem;
+}
+/* Auto-fill rather than a fixed count: twelve picks fill the card at desktop
+   width and reflow to one column on a phone without a breakpoint per size. */
+.redraft-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: .45rem; }
+.rd-pick {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  min-width: 0;
+  padding: .4rem .55rem;
+  border: 1px solid var(--line);
+  border-radius: .15rem;
+  background: var(--panel-2);
+  background: color-mix(in srgb, var(--team-primary) 6%, var(--panel-2));
+  color: var(--text);
+  text-decoration: none;
+}
+a.rd-pick:hover { border-color: var(--team-secondary, var(--accent)); text-decoration: none; }
+.rd-slot {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: .72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .03em;
+}
+.rd-body { display: flex; flex-direction: column; gap: .05rem; min-width: 0; }
+.rd-name { font-size: .82rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rd-meta { color: var(--muted); font-size: .68rem; font-variant-numeric: tabular-nums; }
+
 .pick-row { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .4rem; }
 .pick-chip {
   display: inline-flex;
@@ -2131,7 +2382,10 @@ html[data-theme="light"] .rotation-map .col-hl { background: rgba(0, 0, 0, .07);
 html[data-theme="light"] .rotation-map tr.row-hl > td { box-shadow: inset 0 0 0 999px rgba(0, 0, 0, .05); }
 /* ---------- dev chart ---------- */
 .dev-chart { width: 100%; max-width: 680px; height: auto; display: block; }
-.chart-grid { stroke: rgba(255,255,255,.07); stroke-width: 1; }
+/* Tokenised, not white-on-alpha: a hardcoded white grid is invisible against a
+   white card, so every chart on the site lost its horizontal rules in the light
+   theme and the y-axis ticks floated free. */
+.chart-grid { stroke: var(--line); stroke-width: 1; }
 .chart-tick { fill: var(--muted); font-size: 10px; }
 .line-ovr { fill: none; stroke: var(--accent); stroke-width: 2; }
 .line-ovr-dot { fill: var(--accent); }
@@ -2149,7 +2403,10 @@ html[data-theme="light"] .rotation-map tr.row-hl > td { box-shadow: inset 0 0 0 
 .proj-median-dot { fill: var(--accent); }
 .proj-divider { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; opacity: .55; }
 .proj-hover-line { stroke: var(--muted); stroke-width: 1; pointer-events: none; }
-.proj-hover-dot { fill: var(--accent); stroke: var(--bg, #0f1318); stroke-width: 1.5; pointer-events: none; }
+/* Halo strokes on chart marks take --panel, the surface a chart is actually
+   drawn on (every chart lives in a .card); --bg is the page behind the card and
+   shows up as a grey ring on it, most obviously in the light theme. */
+.proj-hover-dot { fill: var(--accent); stroke: var(--panel); stroke-width: 1.5; pointer-events: none; }
 .proj-key-band { background: var(--accent); opacity: .35; height: 8px; border-radius: 1px; }
 .proj-wrap .chart-tooltip { min-width: 9.5rem; max-width: 13rem; white-space: normal; }
 .proj-wrap .chart-tooltip span { display: block; }
@@ -2310,7 +2567,7 @@ html[data-theme="light"] .rotation-map tr.row-hl > td { box-shadow: inset 0 0 0 
 .ttraj-median { fill: none; stroke: var(--team-primary, var(--accent)); stroke-width: 2.2; }
 .ttraj-cur {
   fill: var(--team-primary, var(--accent));
-  stroke: var(--bg, #0f1318); stroke-width: 1.6;
+  stroke: var(--panel); stroke-width: 1.6;
 }
 /* reference lines */
 .ttraj-ref { stroke-width: 1; stroke-dasharray: 4 4; fill: none; }
@@ -2324,7 +2581,7 @@ html[data-theme="light"] .rotation-map tr.row-hl > td { box-shadow: inset 0 0 0 
 .ttraj-hover-line { stroke: var(--muted); stroke-width: 1; pointer-events: none; }
 .ttraj-hover-dot {
   fill: var(--team-primary, var(--accent));
-  stroke: var(--bg, #0f1318); stroke-width: 1.5; pointer-events: none;
+  stroke: var(--panel); stroke-width: 1.5; pointer-events: none;
 }
 .ttraj-wrap .chart-tooltip { min-width: 9.5rem; max-width: 13rem; white-space: normal; }
 .ttraj-wrap .chart-tooltip span { display: block; }
@@ -2360,17 +2617,18 @@ html[data-theme="light"] .rotation-map tr.row-hl > td { box-shadow: inset 0 0 0 
 .bump-seasonyr { fill: var(--muted); font-size: 10px; text-anchor: middle; }
 .bump-axislabel { fill: var(--muted); font-size: 9px; text-anchor: middle; text-transform: uppercase; letter-spacing: .08em; opacity: .8; }
 
-/* The halo carries a real base fill (--bg) so it never falls back to opaque
-   black; the colored line carries team identity. */
-.bump-halo { fill: none; stroke: var(--bg); stroke-width: 5.5; stroke-linejoin: round; stroke-linecap: round; opacity: .85; }
+/* The halo carries a real base fill (--panel, the card the chart sits on) so it
+   never falls back to opaque black and never reads as a grey outline in the
+   light theme; the colored line carries team identity. */
+.bump-halo { fill: none; stroke: var(--panel); stroke-width: 5.5; stroke-linejoin: round; stroke-linecap: round; opacity: .85; }
 .bump-line { fill: none; stroke: var(--bump-color, var(--muted)); stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; transition: opacity .12s ease, stroke-width .12s ease; }
-.bump-node { fill: var(--bump-color, var(--muted)); stroke: var(--bg); stroke-width: 1.4; transition: opacity .12s ease; }
+.bump-node { fill: var(--bump-color, var(--muted)); stroke: var(--panel); stroke-width: 1.4; transition: opacity .12s ease; }
 .bump-hit { fill: none; stroke: transparent; stroke-width: 16; stroke-linejoin: round; stroke-linecap: round; cursor: pointer; }
 .bump-link { cursor: pointer; }
 
-/* End/start abbrev labels: team-colored, with a --bg halo (paint-order:stroke)
+/* End/start abbrev labels: team-colored, with a --panel halo (paint-order:stroke)
    so they stay legible where lines cross behind them. */
-.bump-endlabel { fill: var(--bump-color, var(--text)); font-size: 11px; font-weight: 800; paint-order: stroke; stroke: var(--bg); stroke-width: 2.6px; stroke-linejoin: round; transition: opacity .12s ease; }
+.bump-endlabel { fill: var(--bump-color, var(--text)); font-size: 11px; font-weight: 800; paint-order: stroke; stroke: var(--panel); stroke-width: 2.6px; stroke-linejoin: round; transition: opacity .12s ease; }
 .bump-endlabel--start { text-anchor: end; }
 .bump-endlabel--end { text-anchor: start; }
 .bump-leader { stroke: var(--line); stroke-width: 1; opacity: .6; }
@@ -2487,7 +2745,10 @@ html[data-theme="light"] .rotation-map tr.row-hl > td { box-shadow: inset 0 0 0 
   flex: 0 0 auto;
   width: 11px; height: 11px;
   border-radius: 50%;
-  box-shadow: 0 0 0 1.5px rgba(0,0,0,0.35), 0 0 0 2.5px rgba(255,255,255,0.12);
+  /* Inner ring is the cell it sits on, outer ring is ink: the old black/white
+     pair only ever worked in one theme at a time — the white was invisible on a
+     white cell and the black read as a hard outline. */
+  box-shadow: 0 0 0 1.5px var(--panel), 0 0 0 2.5px color-mix(in srgb, var(--text) 22%, transparent);
 }
 .pstand-name-txt {
   overflow: hidden;
@@ -2733,11 +2994,45 @@ a.rafters-flag:hover .rafters-pennant, a.rafters-flag:focus-visible .rafters-pen
 .sched-proj.sched-fav { color: var(--text); font-weight: 600; }
 .sched-spread { margin-left: .3rem; color: var(--muted); font-weight: 500; }
 
-/* ---------- schedule honest empty state ---------- */
-.sched-empty { margin: .4rem 0; padding: 1rem 1.1rem; border: 1px dashed var(--line); border-radius: .15rem; background: var(--panel-2); max-width: 42rem; }
-.sched-empty-title { margin: 0 0 .3rem; font-weight: 700; }
-.sched-empty p { margin: 0; }
-.sched-empty p + p { margin-top: .3rem; }
+/* ---------- honest empty states ---------- */
+/* One treatment for every "there is nothing here yet, and here is what will fill it"
+   panel on the league pages: schedule, records feats, all-time leaders, the players
+   scatter, history year one. Dashed rather than solid so it reads as a placeholder and
+   not as a card. `.sched-empty` is the schedule's original name for the same block and
+   stays a selector of record; new call sites use `.lg-empty`.
+
+   The panel spans its card, like tables.css `.empty-state` and every other empty state
+   on the site. Capping the panel itself instead left a 736px box in a 1392px card on
+   records, history and the players scatter -- 47% of each card dead to the right of a
+   dashed edge that stopped in mid-air. The cap belongs on the text: prose reaching a
+   measure and stopping is normal, a bordered box doing it is not.
+
+   No fill, for the same reason: under html[data-theme=light] a var(--panel-2) block on
+   a white card came out the exact colour of the .detail-item rows beneath it (both
+   rgb(237,239,242), both bordered var(--line)), so the placeholder and the real data
+   were indistinguishable and the dashed edge disappeared into its own background. */
+.lg-empty, .sched-empty {
+  margin: .4rem 0 0;
+  padding: 1rem 1.1rem;
+  border: 1px dashed var(--line);
+  border-radius: .15rem;
+}
+.lg-empty-title, .sched-empty-title { margin: 0 0 .3rem; font-weight: 700; }
+.lg-empty p, .sched-empty p { margin: 0; max-width: 46rem; }
+.lg-empty p + p, .sched-empty p + p { margin-top: .35rem; }
+
+/* history year one: the league's format, four facts across, under the empty state.
+   player.css sizes .details-grid for the player page's narrow bio column; inherited
+   whole onto a full-width card it made two 683px rows and threw "Teams" and "10" to
+   opposite ends of them. Four tracks here, two where the site's own 900px breakpoint
+   flattens the bio grid, one where a label and its value stop fitting side by side. */
+.lg-format-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) {
+  .lg-format-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .lg-format-grid { grid-template-columns: 1fr; }
+}
 
 /* ---------- top-of-the-market / top-of-the-board card strips ---------- */
 /* One row of eight -- league.TOP_MARKET_CARDS on free agency, draftroom.TOP_BOARD_CARDS
@@ -2758,11 +3053,22 @@ a.rafters-flag:hover .rafters-pennant, a.rafters-flag:focus-visible .rafters-pen
   justify-content: center;
   gap: .5rem;
 }
-/* Below the width where an eighth of the row is still a legible card, stop forcing
-   eight across and let as many as fit share the row. */
+/* Below the width where an eighth of the row is still a legible card, keep dividing the
+   row by a factor of eight rather than by "as many 150px cards as happen to fit". The
+   as-many-as-fit rule put six cards on the first row at 1024px and the last two at the
+   left of a second row, with four tracks of dead space beside them -- the same ragged
+   last row the eight-track rule above was written to kill. Four and two both divide the
+   strip evenly, so every row stays full at every width. */
 @media (max-width: 1180px) {
   .fa-card-strip,
-  .fa-card-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .fa-card-grid { grid-template-columns: repeat(auto-fit, minmax(0, calc((100% - 1.5rem) / 4))); }
+}
+/* Halve again where a quarter of the row stops fitting a name and a meta line: eight
+   cards, two per row, still no partial row. Deliberately below the 700px the rest of the
+   site breaks at -- four ~150px cards read better here than two very wide ones. */
+@media (max-width: 620px) {
+  .fa-card-strip,
+  .fa-card-grid { grid-template-columns: repeat(auto-fit, minmax(0, calc((100% - .5rem) / 2))); }
 }
 .fa-card {
   position: relative;
@@ -3125,6 +3431,33 @@ a.rafters-flag:hover .rafters-pennant, a.rafters-flag:focus-visible .rafters-pen
 }
 .cl-drama-fill { display: block; height: 100%; border-radius: 999px; background: color-mix(in srgb, var(--warn) 75%, var(--accent)); }
 
+/* preseason state: the drama-index scale stands in for the games that will fill
+   the list, reusing the same meter the ranked cards use. */
+.cl-empty { margin-bottom: 0; }
+/* .empty-state ships with a top margin and no bottom one, which left the dashed
+   panel floating against the weights list under it. */
+.cl-empty .empty-state { margin: 0 0 .9rem; }
+.cl-weights { list-style: none; margin: 0; padding: 0; }
+.cl-weights li {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr) 2rem;
+  align-items: center;
+  gap: .12rem .7rem;
+  padding: .42rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.cl-weights li:last-child { border-bottom: 0; }
+.cl-weight-name { font-size: .85rem; font-weight: 600; }
+.cl-weights .cl-drama-meter { margin-top: 0; height: .35rem; }
+.cl-weight-num {
+  text-align: right;
+  font-size: .85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.cl-weight-note { grid-column: 1 / -1; }
+.cl-empty-links { display: flex; flex-wrap: wrap; gap: .5rem; margin: .7rem 0 0; }
+
 @media (max-width: 640px) {
   .cl-game { flex-wrap: wrap; }
   .cl-body { flex-basis: calc(100% - 4.2rem); }
@@ -3339,6 +3672,33 @@ html.wr-snap { scroll-snap-type: y proximity; }
 }
 .wr-team-card .wr-share-link:hover { border-color: var(--team-secondary); }
 
+/* pre-champion page (no deck): the running order of the deck this page will
+   build. A grid rather than a single column so the card does not leave a
+   1000px-wide gutter beside six short lines on a desktop screen. */
+/* .empty-state ships with no bottom margin, which butted the dashed panel
+   straight into the heading below it. */
+.wr-waiting .empty-state { margin: 0 0 1.1rem; }
+
+/* Explicit column counts, not auto-fit: six items must divide evenly into the
+   grid at every width or the last row strands one lonely entry. */
+.wr-preview {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0 1.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 760px) { .wr-preview { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1200px) { .wr-preview { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.wr-preview li {
+  padding: .5rem 0;
+  border-top: 1px solid var(--line);
+}
+.wr-preview-name { display: block; font-size: .88rem; font-weight: 600; }
+.wr-preview-note { display: block; margin-top: .1rem; font-size: .78rem; }
+.wr-waiting-links { display: flex; flex-wrap: wrap; gap: .5rem; margin: .9rem 0 0; }
+
 /* dots rail (built by wrapped.js) */
 .wr-dots {
   position: fixed;
@@ -3376,8 +3736,9 @@ html.wr-snap { scroll-snap-type: y proximity; }
   color: var(--text);
   font: inherit;
   font-size: .82rem;
-  outline: none;
 }
+/* Accent border on focus is affordance; the global :focus-visible ring is the
+   actual keyboard indicator and must not be suppressed here. */
 .nav-search input:focus { border-color: var(--accent); }
 .search-results {
   position: absolute;
@@ -3390,7 +3751,7 @@ html.wr-snap { scroll-snap-type: y proximity; }
   border: 1px solid var(--line);
   border-radius: .15rem;
   background: var(--panel);
-  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  box-shadow: var(--shadow);
 }
 .search-results a {
   display: flex;
@@ -3422,7 +3783,7 @@ html.wr-snap { scroll-snap-type: y proximity; }
   border: 1px solid var(--line);
   border-radius: .25rem;
   background: var(--panel);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, .5);
+  box-shadow: var(--shadow-lg);
 }
 .palette-input {
   width: 100%;
@@ -3472,7 +3833,7 @@ html.wr-snap { scroll-snap-type: y proximity; }
   border: 1px solid var(--line);
   border-radius: .15rem;
   background: var(--panel);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+  box-shadow: var(--shadow);
 }
 .smp-combobox-list[hidden] { display: none; }
 .smp-cbx-opt {
@@ -3545,7 +3906,7 @@ tr.dead-row > td { opacity: .65; }
   gap: .5rem;
   align-items: center;
   padding: .32rem .55rem;
-  border-bottom: 1px solid rgba(255,255,255,.05);
+  border-bottom: 1px solid var(--rule);
   font-size: .8rem;
   cursor: pointer;
 }
@@ -3574,7 +3935,11 @@ tr.dead-row > td { opacity: .65; }
 .cmp-players td { text-align: left; }
 .cmp-players .cmp-label { color: var(--muted); font-size: .72rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
 .cmp-best { color: var(--good); font-weight: 700; }
-.cmp-bar { display: inline-block; width: 4.5rem; height: .4rem; margin-right: .5rem; border-radius: .15rem; background: rgba(255,255,255,.07); overflow: hidden; vertical-align: middle; }
+/* Translucent, not an opaque surface token: these bars sit in table rows, and
+   `tbody tr:hover` is var(--panel-3) — an opaque --panel-3 track vanishes the
+   moment you hover the row you are reading. --rule-strong composites over
+   zebra, hover and my-team rows alike, in both themes. */
+.cmp-bar { display: inline-block; width: 4.5rem; height: .4rem; margin-right: .5rem; border-radius: .15rem; background: var(--rule-strong); overflow: hidden; vertical-align: middle; }
 .cmp-bar i { display: block; height: 100%; background: var(--accent); }
 .cmp-best .cmp-bar i { background: var(--good); }
 
@@ -3602,7 +3967,11 @@ tr.dead-row > td { opacity: .65; }
 .score-stack .recap { width: 100%; line-height: 1.35; }
 
 @media (max-width: 900px) {
-  .nav-search { flex: none; width: 100%; }
+  /* Keep the header a wrapping ROW once the burger takes over. Giving each
+     control its own full-width line stacks brand / search / menu / picker into
+     ~150px of permanently-sticky chrome on a 390px phone. */
+  .site-header { flex-direction: row; align-items: center; }
+  .nav-search { flex: 1 1 9rem; width: auto; }
   .home-columns { grid-template-columns: 1fr; }
   .nav-burger {
     display: inline-flex;
@@ -3650,7 +4019,9 @@ tr.dead-row > td { opacity: .65; }
   border: 1px solid var(--line);
   border-radius: .15rem;
   background: var(--panel);
-  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  /* --shadow, not a literal: the hardcoded value here was the dark-theme shadow,
+     so the Compare/Trade dropdowns kept a 45%-black drop on a white page. */
+  box-shadow: var(--shadow);
 }
 .combo-option {
   display: flex;
@@ -3786,6 +4157,12 @@ tr.dead-row > td { opacity: .65; }
 .tfin-note--over { color: var(--warn); font-weight: 700; }
 /* ---------- tools.css — Lineup Lab (ll-) + Win-Out Machine (wo-) ---------- */
 .tool-note { font-size: .78rem; margin: .2rem 0 .6rem; }
+/* A note is a subtitle for the heading above it, not the next block down, so it
+   sits closer than the heading's own .5rem bottom margin. (The two margins
+   collapse rather than add, so the -.2rem is what pulls it in, not a correction
+   for double spacing.) */
+.section-title-row + .tool-note,
+.card > h2 + .tool-note { margin-top: -.2rem; }
 
 /* Lineup Lab */
 .ll-head { align-items: center; }
@@ -3876,6 +4253,17 @@ tr.dead-row > td { opacity: .65; }
 .ll-option .muted { font-size: .72rem; white-space: nowrap; }
 .ll-option:hover, .ll-option.selected { background: var(--panel-2); }
 .ll-pick { margin-top: .4rem; min-height: 1.5rem; font-size: .78rem; display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+/* An unfilled slot renders as a lone muted word ("Empty slot" / "League-average
+   fill"). On a page where all five start unfilled that read as five failures
+   rather than five invitations, so the placeholder gets a dashed well that
+   matches .empty-state and occupies the space a real pick will. */
+.ll-pick > .muted:only-child {
+  flex: 1 1 auto;
+  padding: .12rem .4rem;
+  border: 1px dashed var(--line);
+  border-radius: .15rem;
+  font-size: .74rem;
+}
 .ll-pick-meta { color: var(--muted); }
 .ll-pick-meta strong { color: var(--text); }
 .ll-chip { font-size: .72rem; padding: .08rem .5rem; }
@@ -3910,9 +4298,46 @@ tr.dead-row > td { opacity: .65; }
 }
 .ll-bar i { display: block; height: 100%; background: var(--accent); }
 
+/* The field: server-rendered opponents, shown while the matchup board is empty
+   and dropped the moment lineup.js has a real table to put there. */
+[data-ll-matchups]:has(table) + .ll-field { display: none; }
+.ll-field-title { margin: .1rem 0 .45rem; }
+/* One or two columns only: ten teams split evenly either way, where three or
+   five columns would strand a row and squeeze the club names to ellipses. */
+.ll-field-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0 1.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 700px) { .ll-field-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ll-field-row {
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .55rem;
+  padding: .3rem 0;
+  border-top: 1px solid var(--line);
+}
+.ll-field-row .ll-chip { justify-content: center; text-decoration: none; }
+.ll-field-row .ll-chip:hover { text-decoration: none; filter: brightness(1.12); }
+.ll-field-name {
+  font-size: .82rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ll-field-ovr { font-size: .95rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
 /* Win-Out Machine */
 .wo-layout { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: .75rem; align-items: start; }
-@media (max-width: 1050px) { .wo-layout { grid-template-columns: 1fr; } }
+/* minmax(0, 1fr), never a bare 1fr: a bare 1fr track floors at min-content, and
+   the board's min-content is ~600px (a game row is a matchup label + a 3-way
+   segmented control + a win-probability hint). At 375px that pushed the whole
+   page 226px wide and gave every phone a sideways scroll. */
+@media (max-width: 1050px) { .wo-layout { grid-template-columns: minmax(0, 1fr); } }
 .wo-board-tools { display: flex; align-items: center; gap: .6rem; font-size: .72rem; }
 .wo-reset {
   padding: .3rem .7rem;
@@ -3985,6 +4410,18 @@ tr.dead-row > td { opacity: .65; }
   .small-copy { font-size: .8rem; }
   .primary-nav a, .team-dropdown summary, .nav-dropdown summary { padding: .45rem .6rem; font-size: .95rem; }
   .footer-links a { font-size: .85rem; }
+  /* Two-row app bar: title + team/theme on top, Menu + search below. In source
+     order the search sits second and its 9rem floor pushes the burger and the
+     controls onto lines of their own; reordering buys back a whole row of a
+     header that is sticky for the entire scroll. */
+  .header-controls { order: 1; }
+  .nav-burger { order: 2; }
+  .nav-search { order: 3; }
+  .primary-nav { order: 4; }
+  .my-team-picker { max-width: 7rem; }
+  /* Taller header here, so in-page jumps need more clearance than the 3.5rem
+     desktop default. Zero-specificity, same as the base rule. */
+  :where([id]) { scroll-margin-top: 6rem; }
 }
 
 /* glossary bottom sheet */
@@ -4001,6 +4438,7 @@ tr.dead-row > td { opacity: .65; }
   border-top: 1px solid var(--line);
   border-radius: .6rem .6rem 0 0;
   background: var(--panel);
+  /* Directional (upward) on purpose — a bottom sheet cannot use --shadow-lg. */
   box-shadow: 0 -12px 40px rgba(0, 0, 0, .5);
 }
 .gs-grip { width: 2.4rem; height: .25rem; margin: 0 auto .6rem; border-radius: .2rem; background: var(--line); }
@@ -4054,21 +4492,55 @@ body[data-my-team] .card-list-item.my-team-card { box-shadow: inset 2px 0 0 var(
 .table-wrap.as-cards { display: none; }
 /* ---------- print stylesheet (W10) ---------- */
 @media print {
+  /* Paper is not themed. Without this, printing from the dark theme sends the
+     dark palette to the printer: --text is #e8ecf1, so every player name, block
+     title and chip comes out white-on-white, and --muted lands at 2.8:1. Only
+     `body` was being reset, and nothing inherits through the hundreds of rules
+     that set an explicit `color: var(--…)`. Re-point the tokens themselves and
+     the whole sheet follows, both themes, every page.
+     The selector list has to include the [data-theme] forms — the inline script
+     always sets that attribute, and :root alone loses to it on specificity. */
+  :root, html[data-theme="light"], html[data-theme="dark"] {
+    --bg: #fff;
+    --panel: #fff;
+    --panel-2: #f4f5f7;
+    --panel-3: #e9ebee;
+    --line: #bbb;
+    --text: #111;
+    --muted: #555;
+    --accent: #1a4f9c;
+    --accent-soft: rgba(26, 79, 156, .10);
+    --good: #15703f;
+    --good-soft: rgba(21, 112, 63, .12);
+    --bad: #9c2436;
+    --bad-soft: rgba(156, 36, 54, .12);
+    --warn: #7a5200;
+    --warn-soft: rgba(122, 82, 0, .12);
+    --focus: #174ea6;
+    --row-alt: #f4f5f7;
+    --rule: rgba(0, 0, 0, .13);
+    --rule-strong: rgba(0, 0, 0, .35);
+    --shadow: none;
+    --shadow-lg: none;
+    color-scheme: light;
+  }
   html { scroll-behavior: auto; }
-  body { display: block; background: #fff; color: #000; font-size: 11px; }
+  body { display: block; background: var(--bg); color: var(--text); font-size: 11px; }
   .site-header, .nav-search, .nav-burger, .header-controls, .search-results,
   .copy-table, .palette-overlay, .gs-overlay, .footer-links, .table-search,
   .view-toggle, .pos-filter-bar, .h-anchor { display: none !important; }
-  .site-footer { padding: .5rem 0 0; border-top: 1px solid #bbb; background: none; }
-  .footer-meta { color: #333; }
+  .site-footer { padding: .5rem 0 0; border-top: 1px solid var(--line); background: none; }
+  .footer-meta { color: var(--muted); }
   a { color: inherit; text-decoration: none; }
   .page-shell { width: 100%; padding: 0; }
-  .card, .page-hero { background: none; border-color: #bbb; break-inside: avoid; page-break-inside: avoid; }
-  .table-wrap { overflow: visible; border-color: #bbb; }
+  .card, .page-hero { background: none; border-color: var(--line); break-inside: avoid; page-break-inside: avoid; }
+  .table-wrap { overflow: visible; border-color: var(--line); }
   table { background: none; }
-  thead th { position: static; background: none; color: #000; }
+  thead th { position: static; background: none; color: var(--text); }
   th:first-child, td:first-child,
   table.sticky-col2 th:nth-child(2), table.sticky-col2 td:nth-child(2) { position: static; }
   tbody tr:nth-child(odd), tbody tr:nth-child(even), tbody tr:hover { background: none; }
-  th, td { border-bottom: 1px solid #ccc; }
+  th, td { border-bottom: 1px solid var(--rule); }
+  /* Zebra is gone on paper, so a row split across a page break reads as two. */
+  tr { break-inside: avoid; page-break-inside: avoid; }
 }

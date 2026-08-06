@@ -9,6 +9,18 @@
   .small-copy { font-size: .8rem; }
   .primary-nav a, .team-dropdown summary, .nav-dropdown summary { padding: .45rem .6rem; font-size: .95rem; }
   .footer-links a { font-size: .85rem; }
+  /* Two-row app bar: title + team/theme on top, Menu + search below. In source
+     order the search sits second and its 9rem floor pushes the burger and the
+     controls onto lines of their own; reordering buys back a whole row of a
+     header that is sticky for the entire scroll. */
+  .header-controls { order: 1; }
+  .nav-burger { order: 2; }
+  .nav-search { order: 3; }
+  .primary-nav { order: 4; }
+  .my-team-picker { max-width: 7rem; }
+  /* Taller header here, so in-page jumps need more clearance than the 3.5rem
+     desktop default. Zero-specificity, same as the base rule. */
+  :where([id]) { scroll-margin-top: 6rem; }
 }
 
 /* glossary bottom sheet */
@@ -25,6 +37,7 @@
   border-top: 1px solid var(--line);
   border-radius: .6rem .6rem 0 0;
   background: var(--panel);
+  /* Directional (upward) on purpose — a bottom sheet cannot use --shadow-lg. */
   box-shadow: 0 -12px 40px rgba(0, 0, 0, .5);
 }
 .gs-grip { width: 2.4rem; height: .25rem; margin: 0 auto .6rem; border-radius: .2rem; background: var(--line); }

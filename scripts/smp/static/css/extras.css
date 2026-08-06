@@ -270,6 +270,33 @@
 }
 .cl-drama-fill { display: block; height: 100%; border-radius: 999px; background: color-mix(in srgb, var(--warn) 75%, var(--accent)); }
 
+/* preseason state: the drama-index scale stands in for the games that will fill
+   the list, reusing the same meter the ranked cards use. */
+.cl-empty { margin-bottom: 0; }
+/* .empty-state ships with a top margin and no bottom one, which left the dashed
+   panel floating against the weights list under it. */
+.cl-empty .empty-state { margin: 0 0 .9rem; }
+.cl-weights { list-style: none; margin: 0; padding: 0; }
+.cl-weights li {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr) 2rem;
+  align-items: center;
+  gap: .12rem .7rem;
+  padding: .42rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.cl-weights li:last-child { border-bottom: 0; }
+.cl-weight-name { font-size: .85rem; font-weight: 600; }
+.cl-weights .cl-drama-meter { margin-top: 0; height: .35rem; }
+.cl-weight-num {
+  text-align: right;
+  font-size: .85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.cl-weight-note { grid-column: 1 / -1; }
+.cl-empty-links { display: flex; flex-wrap: wrap; gap: .5rem; margin: .7rem 0 0; }
+
 @media (max-width: 640px) {
   .cl-game { flex-wrap: wrap; }
   .cl-body { flex-basis: calc(100% - 4.2rem); }

@@ -656,6 +656,58 @@ def _matchup_score_html(game: dict[str, Any], teams_by_tid: dict[int, dict[str, 
     return _game_score_html(item, teams_by_tid, linked_gids, root)
 
 
+# Drama-index weights, mirrored from derived.drama_index's docstring. Shown on
+# the empty page so a reader learns what the ranking rewards before any game
+# exists to rank; keep in sync if the weights ever move.
+DRAMA_WEIGHTS = [
+    ("Closeness", 30, "final margin — a 1-point game takes all 30, a 16-point game none"),
+    ("Comeback", 25, "the largest deficit the winner erased, saturating at 20 points"),
+    ("Overtime", 20, "10 for one extra period, the full 20 for two or more"),
+    ("Clutch plays", 15, "late-game plays the engine flags, up to three"),
+    ("Statistical feats", 10, "40-point nights, triple-doubles, quadruple-doubles"),
+]
+
+
+def _classics_empty_html(data: dict[str, Any], season: int) -> str:
+    """The preseason state of classics.html.
+
+    Year one has no box scores, so the ranked list is empty. Rather than repeat
+    "nothing here" under a hero that already said it, the page spends the space
+    explaining the scale every future game gets measured on — the same weights
+    the drama badge reports once games exist.
+    """
+    scheduled = len(data.get("schedule") or [])
+    count_html = (
+        f'<span class="muted small-copy">0 of {scheduled} games played</span>'
+        if scheduled else ""
+    )
+    rows = "".join(
+        f'<li><span class="cl-weight-name">{esc(name)}</span>'
+        f'<span class="cl-drama-meter" aria-hidden="true">'
+        f'<span class="cl-drama-fill" style="width:{weight}%"></span></span>'
+        f'<span class="cl-weight-num">{weight}</span>'
+        f'<span class="cl-weight-note muted small-copy">{esc(note)}</span></li>'
+        for name, weight, note in DRAMA_WEIGHTS
+    )
+    return f"""
+      <section class="card cl-empty">
+        <div class="section-title-row">
+          <h2>Nothing to rank yet</h2>
+          {count_html}
+        </div>
+        <p class="empty-state">The {esc(season)} season hasn't tipped off. Every completed game is scored
+        0–100 as soon as it reaches the export, and the ten highest take these slots.</p>
+        <ul class="cl-weights">{rows}</ul>
+        <p class="muted small-copy">Weights out of 100. A one-point double-overtime comeback with three
+        clutch plays and two feats is the only way to score all of them.</p>
+        <p class="cl-empty-links">
+          <a class="button-link" href="schedule.html">The {esc(season)} schedule</a>
+          <a class="button-link" href="simulator.html">Win-Out Machine</a>
+        </p>
+      </section>
+    """
+
+
 def render_classics_page(data: dict[str, Any], teams: list[dict[str, Any]]) -> str:
     season = current_season(data)
     teams_by_tid = {int(t.get("tid")): t for t in teams if t.get("tid") is not None}
@@ -693,10 +745,18 @@ def render_classics_page(data: dict[str, Any], teams: list[dict[str, Any]]) -> s
         </article>
         """)
 
-    span_note = (
-        f"Top {min(CLASSICS_FEATURED, len(ranked))} of {len(ranked)} retained games ({retained_span}) by drama index"
-        if retained_span else "No completed games retained in this export"
-    )
+    # One statement of "there is nothing here yet", not two. With games, the hero
+    # counts them; without, the hero describes the ranking and the panel below
+    # carries the single empty-state sentence plus what will fill the page.
+    if retained_span:
+        span_note = (
+            f"Top {min(CLASSICS_FEATURED, len(ranked))} of {len(ranked)} retained games "
+            f"({retained_span}) by drama index"
+        )
+        list_html = "".join(articles)
+    else:
+        span_note = "Ranked by drama index — closeness, overtimes, comeback size, clutch plays and feats"
+        list_html = _classics_empty_html(data, season)
     body = f"""
     <section class="page-hero cl-hero">
       <div>
@@ -706,7 +766,7 @@ def render_classics_page(data: dict[str, Any], teams: list[dict[str, Any]]) -> s
       </div>
     </section>
     <div class="cl-list">
-      {''.join(articles) if articles else '<p class="empty-state">No completed games yet.</p>'}
+      {list_html}
     </div>
     """
     return page_html("Greatest Games", body, teams, root="", active="classics")

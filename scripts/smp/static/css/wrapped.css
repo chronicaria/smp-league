@@ -195,6 +195,33 @@ html.wr-snap { scroll-snap-type: y proximity; }
 }
 .wr-team-card .wr-share-link:hover { border-color: var(--team-secondary); }
 
+/* pre-champion page (no deck): the running order of the deck this page will
+   build. A grid rather than a single column so the card does not leave a
+   1000px-wide gutter beside six short lines on a desktop screen. */
+/* .empty-state ships with no bottom margin, which butted the dashed panel
+   straight into the heading below it. */
+.wr-waiting .empty-state { margin: 0 0 1.1rem; }
+
+/* Explicit column counts, not auto-fit: six items must divide evenly into the
+   grid at every width or the last row strands one lonely entry. */
+.wr-preview {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0 1.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 760px) { .wr-preview { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1200px) { .wr-preview { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.wr-preview li {
+  padding: .5rem 0;
+  border-top: 1px solid var(--line);
+}
+.wr-preview-name { display: block; font-size: .88rem; font-weight: 600; }
+.wr-preview-note { display: block; margin-top: .1rem; font-size: .78rem; }
+.wr-waiting-links { display: flex; flex-wrap: wrap; gap: .5rem; margin: .9rem 0 0; }
+
 /* dots rail (built by wrapped.js) */
 .wr-dots {
   position: fixed;

@@ -46,11 +46,6 @@ def render_simulator_page(
       </section>
     </noscript>
     <div data-wo-app>
-      <section class="card">
-        <p class="tool-note muted" title="Simulations use a deterministic seed, so the same set of picks always produces the same odds.">Uses
-        the same team-strength model and win probability as the home page's playoff odds; locked games count as
-        final. {esc(board_note)}</p>
-      </section>
       <div class="wo-layout">
         <section class="card wo-games-card">
           <div class="section-title-row">
@@ -60,12 +55,16 @@ def render_simulator_page(
               <button type="button" class="wo-reset" data-wo-reset>Reset picks</button>
             </div>
           </div>
+          <p class="tool-note muted">{esc(board_note)} Locking a game counts it as final; every game you leave
+          alone is re-simulated.</p>
           <div class="wo-board" data-wo-games>
             <p class="muted">Loading schedule…</p>
           </div>
         </section>
         <section class="card wo-odds-card">
           <h2>Odds</h2>
+          <p class="tool-note muted" title="Simulations use a deterministic seed, so the same set of picks always produces the same odds.">Uses
+          the same team-strength model and win probability as the home page's playoff odds.</p>
           <div data-wo-odds aria-live="polite">
             <p class="muted">Loading…</p>
           </div>

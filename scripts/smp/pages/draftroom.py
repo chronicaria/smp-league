@@ -234,11 +234,17 @@ def pool_html(players: list[dict[str, Any]], season: int, order: dict[str, int] 
         headers.append((label, "group-start" if key in RATING_GROUP_STARTS else ""))
     rows = [_pool_row(p, season, ramps) for p in ordered]
 
+    # Hundreds of rows is thousands of pixels: the position dropdown alone means
+    # scrolling to find a name you already have in mind, so the pool gets the same
+    # name filter every other long table on the site has.
     return f"""
     <section class="card">
       <div class="section-title-row">
         <h2>Available Players</h2>
         <span class="muted small-copy">{len(ordered)} available · {"league board order" if order else "by overall"} · shaded by percentile among them · click any column to sort</span>
+      </div>
+      <div class="toolbar">
+        <input class="table-search" data-table-filter="draft-pool" placeholder="Filter players…" aria-label="Filter available players">
       </div>
       {table_html(headers, rows, table_id="draft-pool",
                   empty_message="Nobody left.", pos_filter=True,
@@ -282,12 +288,22 @@ def render_league_draft_page(data: dict[str, Any], teams: list[dict[str, Any]],
     total = rounds * len(active)
     eligible = [p for p in pool if is_draftable(p, season)]
     order = board_order or {}
+    # "on the board" is only true while the board is open. Once every slot is
+    # filled the same players are leftovers, and the hero has to say so or the
+    # page reads like draft night is still ahead of us.
+    made = len(_drafted_by_slot(data, teams, season))
+    if made >= total > 0:
+        tail = f"every pick is in — {len(eligible)} eligible players went unpicked"
+    elif made:
+        tail = f"{made} of {total} picks made — {len(eligible)} eligible players left on the board"
+    else:
+        tail = f"{len(eligible)} eligible players on the board"
     body = f"""
     <section class="page-hero">
       <div>
         <h1>League Draft</h1>
-        <p class="muted">{rounds} rounds · {len(active)} teams · {total} picks · snake order —
-        {len(eligible)} eligible players on the board</p>
+        <p class="muted">{rounds} rounds · {len(active)} teams · {total} picks · snake order ·
+        {esc(tail)}</p>
       </div>
     </section>
     {top_board_html(pool, season, order=order)}

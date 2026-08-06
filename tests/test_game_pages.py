@@ -280,7 +280,12 @@ class TestPreviewPages(unittest.TestCase):
         self.assertIn("Matchup", self.html)
         self.assertIn("INJURY REPORT", self.html)
         self.assertIn("Projected active rotation", self.html)
-        self.assertIn(">FPTS</th>", self.html)
+        # A preview shows what is known before tip-off -- ratings and each man's
+        # projected contribution to the spread -- not an empty box score. It used
+        # to print the played-game columns (FPTS and the rest) with an em-dash in
+        # every cell, which is where the 160 dashes on this page came from.
+        self.assertIn(">Imp</th>", self.html)
+        self.assertNotIn(">FPTS</th>", self.html)
         self.assertNotIn("Did not play:", self.html)
 
     def test_preview_center_is_at_sign(self):

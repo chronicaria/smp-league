@@ -30,7 +30,9 @@
   border: 1px solid var(--line);
   border-radius: .15rem;
   background: var(--panel);
-  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  /* --shadow, not a literal: the hardcoded value here was the dark-theme shadow,
+     so the Compare/Trade dropdowns kept a 45%-black drop on a white page. */
+  box-shadow: var(--shadow);
 }
 .combo-option {
   display: flex;

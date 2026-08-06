@@ -22,7 +22,10 @@
 .ledger-table { width: 100%; border-collapse: collapse; font-size: .86rem; }
 .ledger-table th { text-align: right; color: var(--muted); font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; padding: .35rem .5rem; border-bottom: 1px solid var(--line); }
 .ledger-table th:first-child { text-align: left; }
-.ledger-table td { padding: .3rem .5rem; border-bottom: 1px solid rgba(255,255,255,.04); }
+/* --rule, not a literal white hairline: the hard-coded rgba(255,255,255,.04)
+   was invisible on the light theme's white card, so the ledger lost every row
+   separator between "Win payouts" and the total. --rule flips with the theme. */
+.ledger-table td { padding: .3rem .5rem; border-bottom: 1px solid var(--rule); }
 .ledger-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ledger-table tr.ledger-subtotal td { border-top: 1px solid var(--line); font-weight: 600; }
 .ledger-table tr.ledger-total td { border-top: 2px solid var(--line); font-size: 1rem; padding-top: .5rem; }
@@ -31,9 +34,11 @@
 @media (max-width: 700px) { .fin-rules { grid-template-columns: 1fr; } }
 .fin-rules h3 { margin: 0 0 .4rem; font-size: .82rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 .fin-list { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .25rem; font-size: .86rem; }
-/* roster role dividers: heavier line after Starters (5) and Bench (10) on the default Stats table */
-#roster-stats tbody tr:nth-child(5) > *,
-#roster-stats tbody tr:nth-child(10) > * { border-bottom: 2px solid var(--line); }
+/* No role dividers on the Players table. A heavier rule after rows 5 and 10
+   claimed a Starters / Bench / Reserve split that the table's own column sort
+   and position filter falsify on the first click — nth-child follows whatever
+   order the rows are in and counts filtered-out rows. The Depth Chart card
+   directly below owns that split and states it explicitly. */
 
 
 /* ---------- W2 team immersion: identity scope, stripe, watermark, rafters ---------- */
@@ -135,7 +140,11 @@ html[data-theme="light"] .tm-watermark { color: var(--team-primary, var(--muted)
   .tm-rafters { flex-wrap: wrap; justify-content: flex-start; gap: .7rem; padding: 0 1rem; border-top-width: 4px; }
   .banner--title { width: 3.8rem; }
   .banner--finals { width: 2.6rem; }
-  .tm-watermark { font-size: 5rem; }
+  /* The hero stacks at this width, so the payroll chip covers the abbrev and
+     all that clears it is a row of clipped letter-tops — which reads as a
+     rendering fault rather than a watermark, badly so on the light theme.
+     Nothing is lost by dropping the decoration on a phone. */
+  .tm-watermark { display: none; }
 }
 
 /* show-inactive roster toggle: 0-GP rows are VISIBLE (dimmed) by default;

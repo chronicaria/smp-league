@@ -78,11 +78,45 @@ a.rafters-flag:hover .rafters-pennant, a.rafters-flag:focus-visible .rafters-pen
 .sched-proj.sched-fav { color: var(--text); font-weight: 600; }
 .sched-spread { margin-left: .3rem; color: var(--muted); font-weight: 500; }
 
-/* ---------- schedule honest empty state ---------- */
-.sched-empty { margin: .4rem 0; padding: 1rem 1.1rem; border: 1px dashed var(--line); border-radius: .15rem; background: var(--panel-2); max-width: 42rem; }
-.sched-empty-title { margin: 0 0 .3rem; font-weight: 700; }
-.sched-empty p { margin: 0; }
-.sched-empty p + p { margin-top: .3rem; }
+/* ---------- honest empty states ---------- */
+/* One treatment for every "there is nothing here yet, and here is what will fill it"
+   panel on the league pages: schedule, records feats, all-time leaders, the players
+   scatter, history year one. Dashed rather than solid so it reads as a placeholder and
+   not as a card. `.sched-empty` is the schedule's original name for the same block and
+   stays a selector of record; new call sites use `.lg-empty`.
+
+   The panel spans its card, like tables.css `.empty-state` and every other empty state
+   on the site. Capping the panel itself instead left a 736px box in a 1392px card on
+   records, history and the players scatter -- 47% of each card dead to the right of a
+   dashed edge that stopped in mid-air. The cap belongs on the text: prose reaching a
+   measure and stopping is normal, a bordered box doing it is not.
+
+   No fill, for the same reason: under html[data-theme=light] a var(--panel-2) block on
+   a white card came out the exact colour of the .detail-item rows beneath it (both
+   rgb(237,239,242), both bordered var(--line)), so the placeholder and the real data
+   were indistinguishable and the dashed edge disappeared into its own background. */
+.lg-empty, .sched-empty {
+  margin: .4rem 0 0;
+  padding: 1rem 1.1rem;
+  border: 1px dashed var(--line);
+  border-radius: .15rem;
+}
+.lg-empty-title, .sched-empty-title { margin: 0 0 .3rem; font-weight: 700; }
+.lg-empty p, .sched-empty p { margin: 0; max-width: 46rem; }
+.lg-empty p + p, .sched-empty p + p { margin-top: .35rem; }
+
+/* history year one: the league's format, four facts across, under the empty state.
+   player.css sizes .details-grid for the player page's narrow bio column; inherited
+   whole onto a full-width card it made two 683px rows and threw "Teams" and "10" to
+   opposite ends of them. Four tracks here, two where the site's own 900px breakpoint
+   flattens the bio grid, one where a label and its value stop fitting side by side. */
+.lg-format-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) {
+  .lg-format-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .lg-format-grid { grid-template-columns: 1fr; }
+}
 
 /* ---------- top-of-the-market / top-of-the-board card strips ---------- */
 /* One row of eight -- league.TOP_MARKET_CARDS on free agency, draftroom.TOP_BOARD_CARDS
@@ -103,11 +137,22 @@ a.rafters-flag:hover .rafters-pennant, a.rafters-flag:focus-visible .rafters-pen
   justify-content: center;
   gap: .5rem;
 }
-/* Below the width where an eighth of the row is still a legible card, stop forcing
-   eight across and let as many as fit share the row. */
+/* Below the width where an eighth of the row is still a legible card, keep dividing the
+   row by a factor of eight rather than by "as many 150px cards as happen to fit". The
+   as-many-as-fit rule put six cards on the first row at 1024px and the last two at the
+   left of a second row, with four tracks of dead space beside them -- the same ragged
+   last row the eight-track rule above was written to kill. Four and two both divide the
+   strip evenly, so every row stays full at every width. */
 @media (max-width: 1180px) {
   .fa-card-strip,
-  .fa-card-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .fa-card-grid { grid-template-columns: repeat(auto-fit, minmax(0, calc((100% - 1.5rem) / 4))); }
+}
+/* Halve again where a quarter of the row stops fitting a name and a meta line: eight
+   cards, two per row, still no partial row. Deliberately below the 700px the rest of the
+   site breaks at -- four ~150px cards read better here than two very wide ones. */
+@media (max-width: 620px) {
+  .fa-card-strip,
+  .fa-card-grid { grid-template-columns: repeat(auto-fit, minmax(0, calc((100% - .5rem) / 2))); }
 }
 .fa-card {
   position: relative;

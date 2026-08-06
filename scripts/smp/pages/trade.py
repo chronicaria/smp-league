@@ -30,6 +30,7 @@ from ..core import (
     safe_float,
     safe_int,
     season_regular_stat,
+    stat_gp,
     table_html,
     td,
     team_abbrev,
@@ -40,9 +41,18 @@ from ..core import (
 
 
 def contract_efficiency_table(players: list[dict[str, Any]], teams: list[dict[str, Any]], season: int, root: str = "") -> str:
+    """Non-minimum contracts, graded by Win Shares per dollar once there are any.
+
+    Before the first game of a season every WS, VORP and WS-per-$10M is 0.0, which
+    made the table 120 rows of three dead columns ranked in an order nothing
+    justified (all the sort keys tied). With no games played the section drops the
+    production columns, ranks by salary — the only real number it has — and says so,
+    rather than dressing zeroes up as an efficiency ranking.
+    """
     teams_by_tid = {t["tid"]: t for t in teams}
     palette = team_palette_by_tid(teams)
     rows_data = []
+    played = False
     for player in players:
         if safe_int(player.get("tid"), -9) < 0:
             continue
@@ -51,6 +61,8 @@ def contract_efficiency_table(players: list[dict[str, Any]], teams: list[dict[st
         if amount < 1000:
             continue  # minimum contracts are trivially "efficient"
         stat = season_regular_stat(player, season)
+        if stat_gp(stat) > 0:
+            played = True
         ws = safe_float(stat.get("ows")) + safe_float(stat.get("dws"))
         vorp = safe_float(stat.get("vorp"))
         ws_per_m = ws / (amount / 1000.0)
@@ -59,24 +71,34 @@ def contract_efficiency_table(players: list[dict[str, Any]], teams: list[dict[st
         return ""
     eff_values = [r[5] for r in rows_data]
     lo, hi = min(eff_values), max(eff_values)
-    rows_data.sort(key=lambda r: -r[5])
+    rows_data.sort(key=lambda r: -r[5] if played else (-r[1], player_name(r[0])))
     rows = []
     for player, amount, exp, ws, vorp, ws_per_m in rows_data:
-        rows.append("".join([
+        cells = [
             td(player_link(player, root, show_number=False), sort=player_name(player), cls="name-cell"),
             td(f'{team_dot(player.get("tid"), palette)}{team_label(player.get("tid"), teams_by_tid, root)}', sort=team_label(player.get("tid"), teams_by_tid, as_link=False)),
             td(age(player, season), sort=age(player, season)),
             td(esc(latest_rating(player, season).get("ovr", "—")), sort=latest_rating(player, season).get("ovr")),
             td(fmt_money(amount), sort=amount),
             td(esc(exp or "—"), sort=exp),
-            td(fmt_number(ws, 1), sort=ws),
-            td(fmt_number(vorp, 1), sort=vorp),
-            td(fmt_number(ws_per_m * 10, 2), sort=ws_per_m, style=heat_style(ws_per_m, lo, hi, 1)),
-        ]))
-    headers = ["Player", "Team", "Age", "Ovr", "Salary", "Thru", "WS", "VORP", "WS per $10M"]
+        ]
+        if played:
+            cells += [
+                td(fmt_number(ws, 1), sort=ws),
+                td(fmt_number(vorp, 1), sort=vorp),
+                td(fmt_number(ws_per_m * 10, 2), sort=ws_per_m, style=heat_style(ws_per_m, lo, hi, 1)),
+            ]
+        rows.append("".join(cells))
+    headers = ["Player", "Team", "Age", "Ovr", "Salary", "Thru"]
+    if played:
+        headers += ["WS", "VORP", "WS per $10M"]
+        title, note = "Contract Efficiency", "non-minimum contracts · this season"
+    else:
+        title, note = "Contracts", (f"non-minimum contracts · biggest first · Win Shares grade them "
+                                    f"once the {season} season starts")
     return f"""
     <section class="card home-section">
-      <div class="section-title-row"><h2>Contract Efficiency</h2><span class="muted small-copy">non-minimum contracts · this season</span></div>
+      <div class="section-title-row"><h2>{esc(title)}</h2><span class="muted small-copy">{esc(note)}</span></div>
       <div class="toolbar">
         <input class="table-search" data-table-filter="contracts" placeholder="Filter contracts…" aria-label="Filter contracts">
       </div>

@@ -15,7 +15,10 @@ from ..core import (
     clinch_html,
     completed_game_items,
     compose_event_html,
+    draft_prospects,
+    draft_slot,
     esc,
+    fmt_draft_slot,
     fmt_money,
     fmt_number,
     fmt_pct,
@@ -203,10 +206,16 @@ def playoff_odds_card(data: dict[str, Any], teams: list[dict[str, Any]], season:
     else:
         title = "Playoff Odds"
         note = "10,000 sims · roster-based strength, injury-aware"
+    # The last ten columns are headed "1".."10" and nothing else on the card says
+    # what they count, which reads as ten mystery numbers next to four labelled
+    # percentages. Legend under the table, same shape as the standings clinch key.
+    seed_key = (f'<p class="muted small-copy">Columns 1–{n_seeds} are each team\'s chance of finishing in that '
+                "seed; the top four make the playoffs.</p>")
     return f"""
     <section class="card home-section">
       <div class="section-title-row"><h2>{title}</h2><span class="muted small-copy" title="{esc(detail)}">{esc(note)}</span></div>
       {table_html(headers, rows, table_id="playoff-odds", empty_message="Season complete.")}
+      {seed_key}
     </section>
     """
 
@@ -935,15 +944,22 @@ def _fin_pick(f: dict[str, Any], keys: tuple[str, ...], default: float = 0.0) ->
 
 
 def _salary_cap(data: dict[str, Any], season: int) -> float:
-    """The season's cap, read from the export — never a literal. SMP II: $100M, hard."""
+    """The season's salaryCap figure, read from the export — never a literal.
+
+    SMP II sets salaryCapType "none", so the $100M is not a ceiling anyone can
+    be over: it is the league-average payroll BBGM scales contracts against.
+    That is why the card measures payroll against it instead of policing it.
+    """
     return safe_float(get_attr_value((data.get("gameAttributes") or {}).get("salaryCap"), season), 0.0)
 
 
 def home_finances_table(data: dict[str, Any], teams: list[dict[str, Any]], players: list[dict[str, Any]], season: int) -> str:
-    """League-wide cap sheet for the home page: one row per team, most cap room first.
+    """League-wide pay sheet for the home page: one row per team, most room first.
 
-    There is no cap and no luxury tax, so payroll is compared against the league
-    pay: payroll against the cap is the whole story.
+    Nothing stops a team spending — salaryCapType is "none" and the luxury tax is
+    zero — so the only honest questions the table can answer are how each payroll
+    sits against the league-average figure (_salary_cap) and, once the two differ,
+    how much of next season is already committed.
     """
     odds = (league_sim(data, teams, season) or {}).get("teams") or None
     try:
@@ -1096,10 +1112,14 @@ def roster_grid_card(players: list[dict[str, Any]], teams: list[dict[str, Any]],
         return ""
     detail = ("Every player under contract, ordered by overall within each team. "
               "Per-game figures come from each player's latest season with games played.")
+    # The grid is the one block on the page that scrolls inside itself, and its
+    # scrollbar sits ~950px down. tabindex makes it reachable (and arrow-key
+    # scrollable) without a mouse; overscroll containment is in the CSS so a
+    # sideways trackpad flick here never turns into a browser back-swipe.
     return f"""
     <section class="card home-section">
       <div class="section-title-row"><h2>League Rosters</h2><span class="muted small-copy" title="{esc(detail)}">all {shown} rostered players · scroll sideways</span></div>
-      <div class="hrg-scroll">{''.join(rows)}</div>
+      <div class="hrg-scroll" tabindex="0" role="group" aria-label="League rosters, {shown} players — scrolls sideways">{''.join(rows)}</div>
     </section>
     """
 
@@ -1267,7 +1287,12 @@ def offseason_digest_card(data: dict[str, Any], teams: list[dict[str, Any]], com
 
 
 def preseason_rookie_watch_card(players: list[dict[str, Any]], teams: list[dict[str, Any]], season: int, root: str = "") -> str:
-    """Rookie watch before any games exist: the incoming class by current rating."""
+    """Rookie watch before any games exist: signed first-years by current rating.
+
+    The caption reads "on rosters" rather than "the incoming class": the card
+    now sits directly above the next draft class, and calling the men who are
+    already under contract the incoming one points the word at the wrong card.
+    """
     teams_by_tid = {t["tid"]: t for t in teams}
     palette = team_palette_by_tid(teams)
     rookies = []
@@ -1287,8 +1312,18 @@ def preseason_rookie_watch_card(players: list[dict[str, Any]], teams: list[dict[
     rookies.sort(key=lambda x: (-x[0], -x[1], player_name(x[2])))
     rows = []
     for rank, (ovr, pot, player, rating, draft) in enumerate(rookies[:6], 1):
-        pick = safe_int(draft.get("pick"))
-        pick_html = f'<span class="hm-pick muted">#{pick} pick</span>' if pick > 0 else ""
+        # draft["pick"] is 0 for every one of these men: a fantasy draft records the
+        # slot as a transaction and never touches the draft object. Reading it raw
+        # both dropped a real number and, when it did fire, printed "#37" — the
+        # league says 4.07, which is what core.draft_slot exists to recover.
+        # "Redraft", not "draft": these slots come from the league's own fantasy
+        # redraft, so LeBron reads 1.03 where the real 2003 draft says first
+        # overall. Printed bare it is a decimal next to a team abbreviation with
+        # nothing to say what it counts, and the team pages already call the
+        # event a redraft ("2004 Redraft"), so the tooltip uses the same word.
+        slot = fmt_draft_slot(draft_slot(player))
+        pick_html = (f'<span class="hm-pick muted" title="Redraft slot — round.pick">{esc(slot)}</span>'
+                     if slot else "")
         rows.append(
             f'<li><span class="leader-rank">{rank}</span>'
             f'{team_dot(player.get("tid"), palette)}'
@@ -1299,8 +1334,63 @@ def preseason_rookie_watch_card(players: list[dict[str, Any]], teams: list[dict[
         )
     return f"""
     <section class="card home-section">
-      <div class="section-title-row"><h2>Rookie Watch</h2><span class="muted small-copy">the incoming class · Ovr / Pot</span></div>
+      <div class="section-title-row"><h2>Rookie Watch</h2><span class="muted small-copy">on rosters · Ovr / Pot</span></div>
       <ol class="leader-list rookie-list">{''.join(rows)}</ol>
+    </section>
+    """
+
+
+def draft_board_card(data: dict[str, Any], season: int, root: str = "") -> str:
+    """Top of the next draft class, for the preseason side rail.
+
+    Year one has no completed season, so the digest / fantasy / injury / news
+    cards all come back empty and the rail would hold one short list against a
+    full-height main column. The ten draft classes the export carries are real
+    today and appear nowhere else on the home page, so the class that is next
+    out leads here.
+
+    Ranked by potential off ``latest_rating`` with no season clamp — exactly the
+    key draft.html sorts its own board with — so the two lists cannot disagree
+    about who is at the top. Age is quoted in the draft year, not today, for the
+    same reason the draft page does it: a prospect's ratings and height are
+    stamped at the season he comes out in.
+
+    That sort is why the caption says "by potential" out loud. The value column
+    leads with overall, to match the two lists this card is stacked between, and
+    overall does not descend with the rank (Iguodala is 4th at 59 behind a 53) —
+    which reads as a broken sort unless the card says what it is sorted on.
+
+    The heading is the draft page's own ("Class of 2004"), not a second name for
+    the same list, and it is short enough that the caption stays on one line at
+    the narrowest rail width.
+    """
+    by_year: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for player in draft_prospects(data):
+        year = (player.get("draft") or {}).get("year")
+        if isinstance(year, int) and year >= season:
+            by_year[year].append(player)
+    if not by_year:
+        return ""
+    draft_year = min(by_year)
+    board = sorted(
+        by_year[draft_year],
+        key=lambda p: (-safe_int(latest_rating(p).get("pot")), -safe_int(latest_rating(p).get("ovr")), player_name(p)),
+    )
+    rows = []
+    for rank, player in enumerate(board[:8], 1):
+        rating = latest_rating(player)
+        ovr, pot = safe_int(rating.get("ovr")), safe_int(rating.get("pot"))
+        rows.append(
+            f'<li><span class="leader-rank">{rank}</span>'
+            f'<a class="player-link" href="{player_url(player, root)}">{esc(player_name(player))}</a>'
+            f'<span class="leader-team" title="Position · age in the {esc(draft_year)} draft">'
+            f'{esc(rating.get("pos", ""))} · {esc(age(player, draft_year))}</span>'
+            f'<span class="leader-value" title="Overall {ovr} · Potential {pot}">{ovr} <span class="muted">/ {pot}</span></span></li>'
+        )
+    return f"""
+    <section class="card home-section">
+      <div class="section-title-row"><h2>Class of {esc(draft_year)}</h2><a class="muted small-copy" href="{root}draft.html">by potential · full board →</a></div>
+      <ol class="leader-list">{''.join(rows)}</ol>
     </section>
     """
 
@@ -1592,14 +1682,26 @@ def fantasy_leaders_card(data: dict[str, Any], players: list[dict[str, Any]], te
     """
 
 
-def _home_columns(main_cards: list[str], side_cards: list[str]) -> str:
-    """Two-column layout that never emits empty wrappers (no hollow home-side)."""
-    main_html = "".join(card for card in main_cards if card)
-    side_html = "".join(card for card in side_cards if card)
-    if main_html and side_html:
-        return (f'<div class="home-columns"><div class="home-main">{main_html}</div>'
-                f'<div class="home-side">{side_html}</div></div>')
-    return main_html + side_html
+def _home_columns(main_cards: list[str], side_cards: list[str], min_side: int = 2) -> str:
+    """Two-column layout that never emits empty wrappers (no hollow home-side).
+
+    The rail is 30% of the front page and only earns that width if something
+    fills it. Card count is the only signal available at build time, so this is
+    a floor rather than a cure: below ``min_side`` surviving cards next to a
+    stack of main-column cards, the page drops to one flowing column instead of
+    holding a column-height hole open down the right-hand side. Year one used to
+    do exactly that — four of the five in-season rail cards have no data yet, and
+    the survivor left ~760px of nothing beside it. The real fix is giving the
+    rail cards that are real in preseason; this only stops the grid lying on the
+    day they are not.
+    """
+    main_html = [card for card in main_cards if card]
+    side_html = [card for card in side_cards if card]
+    lopsided = len(side_html) < min_side <= len(main_html)
+    if main_html and side_html and not lopsided:
+        return (f'<div class="home-columns"><div class="home-main">{"".join(main_html)}</div>'
+                f'<div class="home-side">{"".join(side_html)}</div></div>')
+    return "".join(main_html) + "".join(side_html)
 
 
 def render_home_page(data: dict[str, Any], teams: list[dict[str, Any]], players: list[dict[str, Any]],
@@ -1620,6 +1722,14 @@ def render_home_page(data: dict[str, Any], teams: list[dict[str, Any]], players:
         # No real games yet: lead with the year-ahead projections and the offseason
         # story; zero-data standings/team-stats/award cards are replaced by the
         # banner's one-line explanation instead of rendering as dash walls.
+        #
+        # The rail is built the other way round from the in-season one. Four of the
+        # five in-season cards (digest, fantasy, injuries, news) need a season that
+        # has been played, so in year one they all return "" and the rail collapses
+        # to a single short list. The three cards between them that ARE real before
+        # tip-off — who the league's rookies are, who is coming out in the next
+        # draft, who is still unsigned — carry it instead, running youngest to
+        # oldest: on the roster, in the draft, on the market.
         fantasy_season = completed
         body = f"""
         <h1 class="sr-only">SMP Basketball League</h1>
@@ -1633,6 +1743,8 @@ def render_home_page(data: dict[str, Any], teams: list[dict[str, Any]], players:
             [
                 offseason_digest_card(data, teams, completed),
                 preseason_rookie_watch_card(players, teams, season),
+                draft_board_card(data, season),
+                fa_watch_card(data, teams, season),
                 fantasy_leaders_card(data, players, teams, fantasy_season, season),
                 injury_report_card(players, teams, season),
                 news_feed_card(data, teams, season),

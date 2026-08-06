@@ -1,6 +1,9 @@
 /* ---------- dev chart ---------- */
 .dev-chart { width: 100%; max-width: 680px; height: auto; display: block; }
-.chart-grid { stroke: rgba(255,255,255,.07); stroke-width: 1; }
+/* Tokenised, not white-on-alpha: a hardcoded white grid is invisible against a
+   white card, so every chart on the site lost its horizontal rules in the light
+   theme and the y-axis ticks floated free. */
+.chart-grid { stroke: var(--line); stroke-width: 1; }
 .chart-tick { fill: var(--muted); font-size: 10px; }
 .line-ovr { fill: none; stroke: var(--accent); stroke-width: 2; }
 .line-ovr-dot { fill: var(--accent); }
@@ -18,7 +21,10 @@
 .proj-median-dot { fill: var(--accent); }
 .proj-divider { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; opacity: .55; }
 .proj-hover-line { stroke: var(--muted); stroke-width: 1; pointer-events: none; }
-.proj-hover-dot { fill: var(--accent); stroke: var(--bg, #0f1318); stroke-width: 1.5; pointer-events: none; }
+/* Halo strokes on chart marks take --panel, the surface a chart is actually
+   drawn on (every chart lives in a .card); --bg is the page behind the card and
+   shows up as a grey ring on it, most obviously in the light theme. */
+.proj-hover-dot { fill: var(--accent); stroke: var(--panel); stroke-width: 1.5; pointer-events: none; }
 .proj-key-band { background: var(--accent); opacity: .35; height: 8px; border-radius: 1px; }
 .proj-wrap .chart-tooltip { min-width: 9.5rem; max-width: 13rem; white-space: normal; }
 .proj-wrap .chart-tooltip span { display: block; }
@@ -179,7 +185,7 @@
 .ttraj-median { fill: none; stroke: var(--team-primary, var(--accent)); stroke-width: 2.2; }
 .ttraj-cur {
   fill: var(--team-primary, var(--accent));
-  stroke: var(--bg, #0f1318); stroke-width: 1.6;
+  stroke: var(--panel); stroke-width: 1.6;
 }
 /* reference lines */
 .ttraj-ref { stroke-width: 1; stroke-dasharray: 4 4; fill: none; }
@@ -193,7 +199,7 @@
 .ttraj-hover-line { stroke: var(--muted); stroke-width: 1; pointer-events: none; }
 .ttraj-hover-dot {
   fill: var(--team-primary, var(--accent));
-  stroke: var(--bg, #0f1318); stroke-width: 1.5; pointer-events: none;
+  stroke: var(--panel); stroke-width: 1.5; pointer-events: none;
 }
 .ttraj-wrap .chart-tooltip { min-width: 9.5rem; max-width: 13rem; white-space: normal; }
 .ttraj-wrap .chart-tooltip span { display: block; }
@@ -229,17 +235,18 @@
 .bump-seasonyr { fill: var(--muted); font-size: 10px; text-anchor: middle; }
 .bump-axislabel { fill: var(--muted); font-size: 9px; text-anchor: middle; text-transform: uppercase; letter-spacing: .08em; opacity: .8; }
 
-/* The halo carries a real base fill (--bg) so it never falls back to opaque
-   black; the colored line carries team identity. */
-.bump-halo { fill: none; stroke: var(--bg); stroke-width: 5.5; stroke-linejoin: round; stroke-linecap: round; opacity: .85; }
+/* The halo carries a real base fill (--panel, the card the chart sits on) so it
+   never falls back to opaque black and never reads as a grey outline in the
+   light theme; the colored line carries team identity. */
+.bump-halo { fill: none; stroke: var(--panel); stroke-width: 5.5; stroke-linejoin: round; stroke-linecap: round; opacity: .85; }
 .bump-line { fill: none; stroke: var(--bump-color, var(--muted)); stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; transition: opacity .12s ease, stroke-width .12s ease; }
-.bump-node { fill: var(--bump-color, var(--muted)); stroke: var(--bg); stroke-width: 1.4; transition: opacity .12s ease; }
+.bump-node { fill: var(--bump-color, var(--muted)); stroke: var(--panel); stroke-width: 1.4; transition: opacity .12s ease; }
 .bump-hit { fill: none; stroke: transparent; stroke-width: 16; stroke-linejoin: round; stroke-linecap: round; cursor: pointer; }
 .bump-link { cursor: pointer; }
 
-/* End/start abbrev labels: team-colored, with a --bg halo (paint-order:stroke)
+/* End/start abbrev labels: team-colored, with a --panel halo (paint-order:stroke)
    so they stay legible where lines cross behind them. */
-.bump-endlabel { fill: var(--bump-color, var(--text)); font-size: 11px; font-weight: 800; paint-order: stroke; stroke: var(--bg); stroke-width: 2.6px; stroke-linejoin: round; transition: opacity .12s ease; }
+.bump-endlabel { fill: var(--bump-color, var(--text)); font-size: 11px; font-weight: 800; paint-order: stroke; stroke: var(--panel); stroke-width: 2.6px; stroke-linejoin: round; transition: opacity .12s ease; }
 .bump-endlabel--start { text-anchor: end; }
 .bump-endlabel--end { text-anchor: start; }
 .bump-leader { stroke: var(--line); stroke-width: 1; opacity: .6; }
@@ -356,7 +363,10 @@
   flex: 0 0 auto;
   width: 11px; height: 11px;
   border-radius: 50%;
-  box-shadow: 0 0 0 1.5px rgba(0,0,0,0.35), 0 0 0 2.5px rgba(255,255,255,0.12);
+  /* Inner ring is the cell it sits on, outer ring is ink: the old black/white
+     pair only ever worked in one theme at a time — the white was invisible on a
+     white cell and the black read as a hard outline. */
+  box-shadow: 0 0 0 1.5px var(--panel), 0 0 0 2.5px color-mix(in srgb, var(--text) 22%, transparent);
 }
 .pstand-name-txt {
   overflow: hidden;
