@@ -16,9 +16,14 @@ _REPO = os.path.dirname(_HERE)
 _SCRIPTS = os.path.join(_REPO, "scripts")
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+from current_export import current_export_path  # noqa: E402
 
 from smp.core import (  # noqa: E402
     current_season,
+    draft_slot,
     esc,
     free_agents,
     latest_rating,
@@ -28,7 +33,7 @@ from smp.core import (  # noqa: E402
 )
 from smp.pages import draftroom as dr  # noqa: E402
 
-_EXPORT = os.path.join(_REPO, "league-data", "2004_predraft.json")
+_EXPORT = current_export_path()
 _BOARD = os.path.join(_REPO, "league-data", dr.BOARD_ORDER_FILE)
 
 _CSV = "#,Name,Pos,Ovr\n1,Bench Warmer,SG,55\n2,Star Player,SF,80\n"
@@ -119,12 +124,23 @@ class TestShippedBoardMatchesTheExport(unittest.TestCase):
         self.assertTrue(self.order)
         self.assertEqual(sorted(set(self.order) - names), [])
 
-    def test_undrafted_players_are_all_on_the_board(self):
-        # Anyone still unsigned should have a board slot; only drafted players drop off.
-        missing = [f"{p['firstName']} {p['lastName']}".strip()
-                   for p in self.data["players"]
-                   if p["tid"] < 0 and f"{p['firstName']} {p['lastName']}".strip() not in self.order]
+    def test_every_player_in_the_pool_has_a_board_slot(self):
+        """The board still covers the pool the page renders, post-redraft.
+
+        The pool is free agents, and the redraft only moved players off it, so every
+        one of them was on the board when it was exported. The 2004 rookie class the
+        board never saw does NOT contradict this: prospects sit at tid -2 and never
+        enter the pool at all — which is why this checks free_agents rather than
+        everyone unsigned, the reading that broke when the rookies arrived.
+        """
+        pool = free_agents(self.data)
+        self.assertTrue(pool)
+        missing = sorted(player_name(p).strip() for p in pool
+                         if player_name(p).strip() not in self.order)
         self.assertEqual(missing, [])
+        prospects = [p for p in self.data["players"] if p["tid"] == -2]
+        self.assertTrue(prospects, "expected a rookie class the board predates")
+        self.assertNotIn(player_name(prospects[0]).strip(), [player_name(p).strip() for p in pool])
 
     def test_board_order_outranks_overall_somewhere_in_the_live_pool(self):
         """The board is not just an ovr sort — find a live pair where they disagree.
@@ -152,13 +168,20 @@ class TestBoardSlots(unittest.TestCase):
         cls.teams = sorted(cls.data["teams"], key=team_sort_key)
 
     def _picks_made(self):
-        """(round, pick) -> "Team Player", straight from the export."""
+        """(round, pick) -> "Team Player", straight from the export.
+
+        Via draft_slot, not player["draft"]: a fantasy draft never touches that object,
+        so reading it found zero picks in a league whose draft was complete.
+        """
         by_tid = {t["tid"]: t for t in self.teams}
+        round_size = len(self.teams)
         out = {}
         for p in self.data["players"]:
-            d = p.get("draft") or {}
-            if d.get("round", 0) >= 1 and p["tid"] >= 0:
-                out[(d["round"], d["pick"])] = (by_tid[d["tid"]]["abbrev"], player_name(p))
+            if p["tid"] < 0:
+                continue
+            slot = draft_slot(p, round_size)
+            if slot:
+                out[slot] = (by_tid[p["tid"]]["abbrev"], player_name(p))
         return out
 
     def test_every_recorded_pick_shows_in_its_slot(self):

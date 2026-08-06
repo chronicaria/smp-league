@@ -32,6 +32,7 @@ from ..core import (
     TEAM_RATING_RANK_KEYS,
     active_teams_for_season,
     age,
+    draft_slot,
     esc,
     fmt_money,
     get_attr_value,
@@ -108,14 +109,23 @@ def snake_order(tids: list[int], rounds: int) -> list[list[int]]:
     return order
 
 
-def _drafted_by_slot(data: dict[str, Any]) -> dict[tuple[int, int], dict[str, Any]]:
-    """(round, pick) -> player, for picks already made. Empty before the draft."""
+def _drafted_by_slot(data: dict[str, Any], teams: list[dict[str, Any]],
+                     season: int) -> dict[tuple[int, int], dict[str, Any]]:
+    """(round, pick) -> player, for picks already made. Empty before the draft.
+
+    Slots come from core.draft_slot, which reads the transaction a fantasy draft
+    writes as well as the ``draft`` object a rookie draft stamps -- zengm leaves that
+    object alone in a fantasy draft, so reading it directly showed an empty board
+    after a redraft that had in fact filled every slot.
+    """
+    round_size = len(active_teams_for_season(teams, season)) or None
     out: dict[tuple[int, int], dict[str, Any]] = {}
     for p in (data or {}).get("players", []):
-        d = p.get("draft") or {}
-        rnd, pick = safe_int(d.get("round")), safe_int(d.get("pick"))
-        if rnd > 0 and pick > 0 and safe_int(p.get("tid"), -1) >= 0:
-            out[(rnd, pick)] = p
+        if safe_int(p.get("tid"), -1) < 0:
+            continue
+        slot = draft_slot(p, round_size)
+        if slot:
+            out[slot] = p
     return out
 
 
@@ -125,7 +135,7 @@ def board_html(data: dict[str, Any], teams: list[dict[str, Any]], season: int) -
     tids = sorted(by_tid)
     rounds = _rounds(data, season)
     order = snake_order(tids, rounds)
-    drafted = _drafted_by_slot(data)
+    drafted = _drafted_by_slot(data, teams, season)
     made = len(drafted)
     total = rounds * len(tids)
 

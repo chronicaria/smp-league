@@ -10,6 +10,10 @@ _REPO = os.path.dirname(_HERE)
 _SCRIPTS = os.path.join(_REPO, "scripts")
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+from current_export import load_current_export  # noqa: E402
 
 import league_generator as lg  # noqa: E402
 
@@ -458,11 +462,7 @@ class TestCanonicalPositions(unittest.TestCase):
 
     def test_no_middle_labels_survive_on_the_real_export(self):
         import glob, json
-        matches = glob.glob(os.path.join(_REPO, "league-data", "2004_predraft.json"))
-        if not matches:
-            self.skipTest("2004 predraft export not present")
-        with open(matches[0], "r", encoding="utf-8") as fh:
-            data = json.load(fh)
+        _, data = load_current_export()
         lg.normalize_positions(data)
         seen = {r.get("pos") for p in data["players"] for r in (p.get("ratings") or [])}
         self.assertTrue(seen.issubset(set(lg.CANONICAL_POS)), seen)

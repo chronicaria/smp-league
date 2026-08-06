@@ -12,11 +12,15 @@ _REPO = os.path.dirname(_HERE)
 _SCRIPTS = os.path.join(_REPO, "scripts")
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+from current_export import current_export_path  # noqa: E402
 
 from smp import identity  # noqa: E402
 
 
-_EXPORT = os.path.join(_REPO, "league-data", "2004_predraft.json")
+_EXPORT = current_export_path()
 
 # TEAM_IDENTITY is process-global and any build (core.normalize_positions) re-keys
 # it from whatever export that build loaded. Other test modules load real exports,

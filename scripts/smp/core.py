@@ -219,6 +219,11 @@ def register_site_meta(data: dict[str, Any], export_name: str | None = None) -> 
     SITE_META["games"] = len(data.get("games", []) or [])
     SITE_META["phase"] = phase_value(data)
     SITE_META["season"] = current_season(data)
+    # Teams per draft round. A fantasy draft records only an overall pick number, so
+    # turning pick 37 back into "4.07" needs the round size, and the round size is how
+    # many teams were picking -- see draft_slot.
+    SITE_META["draft_round_size"] = len(active_teams_for_season(
+        data.get("teams", []) or [], SITE_META["season"]))
     # Reset when no filename is given so a stale name never leaks across builds
     # in one process; build.py's follow-up call (after normalize_positions) sets it.
     SITE_META["export"] = str(export_name) if export_name else None
@@ -1207,6 +1212,50 @@ def prior_team_tid(player: dict[str, Any], season: int) -> int | None:
     return safe_int(rows[-1].get("tid")) if rows else None
 
 
+def draft_transaction(player: dict[str, Any]) -> dict[str, Any] | None:
+    """The player's draft transaction, or None.
+
+    Basketball GM writes one for a rookie draft (phase 5), a fantasy draft (-1) and an
+    expansion draft (-2). Only the last of those is not really a draft -- it is a
+    dispersal of players who were already in the league -- so it is excluded here.
+    """
+    for tx in reversed(player.get("transactions") or []):
+        if isinstance(tx, dict) and tx.get("type") == "draft" and safe_int(tx.get("phase"), 0) != -2:
+            return tx
+    return None
+
+
+def draft_slot(player: dict[str, Any], round_size: int | None = None) -> tuple[int, int] | None:
+    """``(round, pick)`` of the draft slot this player was taken at, or None.
+
+    A rookie draft stamps the slot straight onto ``player["draft"]``, but a FANTASY
+    draft does not touch that object at all -- zengm's selectPlayer skips it, so a
+    redrafted veteran keeps his real-life 1998 draft row -- and records the pick only
+    as a transaction carrying an OVERALL pick number. Overall 37 in a ten-team league
+    is 4.07, which is the number the league actually says out loud, so it is converted
+    back here rather than printed raw.
+    """
+    draft = player.get("draft") or {}
+    rnd, pick = safe_int(draft.get("round")), safe_int(draft.get("pick"))
+    if rnd >= 1 and pick >= 1:
+        return rnd, pick
+
+    tx = draft_transaction(player)
+    overall = safe_int((tx or {}).get("pickNum"))
+    if overall < 1:
+        return None
+    if round_size is None:
+        round_size = safe_int(SITE_META.get("draft_round_size"))
+    if round_size < 1:
+        return None
+    return (overall - 1) // round_size + 1, (overall - 1) % round_size + 1
+
+
+def fmt_draft_slot(slot: tuple[int, int] | None) -> str:
+    """(4, 7) -> '4.07'. Zero-padded so slots sort and line up as text."""
+    return "" if slot is None else f"{slot[0]}.{slot[1]:02d}"
+
+
 def acquisition_html(player: dict[str, Any], teams_by_tid: dict[int, dict[str, Any]]) -> str:
     season = SITE_META.get("season")
     blank = '<span class="muted">—</span>'
@@ -1233,15 +1282,20 @@ def acquisition_html(player: dict[str, Any], teams_by_tid: dict[int, dict[str, A
     tx_type = tx.get("type")
     season_short = f"'{str(tx.get('season'))[-2:]}" if tx.get("season") else ""
     if tx_type == "draft":
-        # The 2026 inaugural draft only seeded rosters, and a "draft" whose season does
-        # not match the player's actual draft year is an expansion/dispersal assignment
-        # (e.g. Ithaca's 2028 expansion draft) -- neither is a real draft, so show nothing.
+        # An expansion draft is a dispersal of players already in the league, not a
+        # draft anybody counts, so it shows nothing. SMP I's 2026 draft was the same
+        # kind of event -- it only seeded the opening rosters -- and stays excluded by
+        # season; SMP II's 2004 redraft is the league's actual draft and does show.
+        #
+        # This used to require the transaction's season to equal player.draft.year,
+        # which worked only while every draft was a ROOKIE draft. A fantasy draft picks
+        # veterans, so a 2004 redraft of a man drafted in 1998 failed that test and the
+        # whole league's Acquired column went blank.
         tx_season = safe_int(tx.get("season"))
-        if tx_season == 2026 or tx_season != safe_int((player.get("draft") or {}).get("year"), -1):
+        if tx_season == 2026 or safe_int(tx.get("phase"), 0) == -2:
             return blank
-        pick = tx.get("pickNum")
-        pick_text = f" #{pick}" if pick else ""
-        return f"Draft {esc(season_short)}{esc(pick_text)}"
+        slot = fmt_draft_slot(draft_slot(player))
+        return f"Draft {esc(season_short)}{' ' + esc(slot) if slot else ''}"
     if tx_type == "trade":
         from_team = teams_by_tid.get(safe_int(tx.get("fromTid"), -10))
         from_text = f" from {team_abbrev(from_team)}" if from_team else ""

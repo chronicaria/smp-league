@@ -22,6 +22,10 @@ _REPO = os.path.dirname(_HERE)
 _SCRIPTS = os.path.join(_REPO, "scripts")
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+from current_export import load_current_export  # noqa: E402
 
 import projections  # noqa: E402
 from smp.core import heat_style, normalize_positions, team_sort_key, active_players, current_season  # noqa: E402
@@ -253,11 +257,7 @@ class TestSimulatorJsModel(unittest.TestCase):
 
 class TestRealExport(unittest.TestCase):
     def test_shells_render_on_real_export(self):
-        matches = glob.glob(os.path.join(_REPO, "league-data", "2004_predraft.json"))
-        if not matches:
-            self.skipTest("2004 predraft export not present")
-        with open(matches[0]) as fh:
-            data = json.load(fh)
+        _, data = load_current_export()
         normalize_positions(data)
         season = current_season(data)
         teams = sorted(data.get("teams", []), key=team_sort_key)

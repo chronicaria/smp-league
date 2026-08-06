@@ -6,11 +6,18 @@ The site is generated from Basketball GM-style JSON exports in `league-data/`.
 The generated league pages live at the repository root so GitHub Pages serves
 the league homepage at `/`.
 
-SMP II is the current league: it tips off in 2026 with real 2003-04 NBA players,
-a 36-game season, 12-man rosters, a $100M hard cap, and a four-team best-of-five
-playoff. Pages that are made of league history — Rivalries above all — are
-skipped until games have actually been played, so the year-one nav is shorter
-than it will be in year two.
+SMP II is the current league: it plays the 2004 season with real 2003-04 NBA
+players, a 36-game season, 12-man rosters, a $100M hard cap, and a four-team
+best-of-five playoff. The 12-round snake redraft that stocked those rosters is
+complete; `league-data/2004_predraft.json` is the snapshot from before it. Pages
+that are made of league history — Rivalries above all — are skipped until games
+have actually been played, so the year-one nav is shorter than it will be in
+year two.
+
+Note that the redraft was a Basketball GM **fantasy** draft, which does not stamp
+a slot onto `player.draft` the way a rookie draft does — it records only an
+overall pick number on a transaction. `core.draft_slot` turns that back into the
+"4.07" the league says out loud.
 
 ## Structure
 
@@ -60,7 +67,7 @@ from, and a cutout is ignored unless the player still carries that exact URL.
 ## Regenerate
 
 ```sh
-python3 scripts/league_generator.py league-data/2026_day1.json --out .
+python3 scripts/league_generator.py league-data/2004_preseason.json --out .
 ```
 
 The `Build SMP league site` GitHub Action regenerates the root site on pushes to
