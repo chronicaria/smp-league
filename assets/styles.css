@@ -2680,7 +2680,10 @@ a.rafters-flag:hover .rafters-pennant, a.rafters-flag:focus-visible .rafters-pen
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.fa-card-portrait { width: 3.4rem; height: 3.4rem; border-radius: 50%; object-fit: cover; background: var(--panel-3); }
+/* No fill behind the portrait: a cut-out player sits straight on the card, and an
+   uncut photo is opaque and covers the slot anyway, so the swatch only ever showed
+   as a disc behind the players whose backdrop was removed. */
+.fa-card-portrait { width: 3.4rem; height: 3.4rem; border-radius: 50%; object-fit: cover; }
 .fa-card-portrait .monogram { width: 3.4rem; height: 3.4rem; }
 .fa-card-name { font-weight: 700; font-size: .84rem; line-height: 1.25; }
 .fa-card:hover .fa-card-name { text-decoration: underline; }
@@ -2702,6 +2705,13 @@ a.rafters-flag:hover .rafters-pennant, a.rafters-flag:focus-visible .rafters-pen
    carry the player's name once the pick is in. */
 .dr-card-grid,
 .fa-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .5rem; }
+/* Top of the Board is one row of draftroom.TOP_BOARD_CARDS, not an auto-fill that
+   wraps a stray card onto a second line. Below the width where 8 still fit, fall
+   back to auto-fill rather than squeezing them to nothing. */
+.fa-card-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+@media (max-width: 1180px) {
+  .fa-card-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+}
 .dr-board { width: 100%; border-collapse: separate; border-spacing: 2px; }
 .dr-board th { font-size: .72rem; color: var(--muted); font-weight: 600; padding: .2rem .3rem; }
 .dr-board th.dr-round { text-align: right; white-space: nowrap; }
