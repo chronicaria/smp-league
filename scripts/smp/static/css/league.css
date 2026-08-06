@@ -181,7 +181,9 @@ a.rafters-flag:hover .rafters-pennant, a.rafters-flag:focus-visible .rafters-pen
 /* No fill behind the portrait: a cut-out player sits straight on the card, and an
    uncut photo is opaque and covers the slot anyway, so the swatch only ever showed
    as a disc behind the players whose backdrop was removed. */
-.fa-card-portrait { width: 3.4rem; height: 3.4rem; border-radius: 50%; object-fit: cover; }
+/* object-position: top crops to the head — the 120x180 cutouts centre-crop onto the
+   chest otherwise. Landscape headshots are unaffected (cover already fits their height). */
+.fa-card-portrait { width: 3.4rem; height: 3.4rem; border-radius: 50%; object-fit: cover; object-position: top; }
 .fa-card-portrait .monogram { width: 3.4rem; height: 3.4rem; }
 .fa-card-name { font-weight: 700; font-size: .84rem; line-height: 1.25; }
 .fa-card:hover .fa-card-name { text-decoration: underline; }

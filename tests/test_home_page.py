@@ -133,15 +133,26 @@ class TestOddsRiverCard(unittest.TestCase):
         self.assertEqual(html.count('class="oddsr-line"'), 1)
         self.assertIn('class="oddsr-dot"', html)
 
-    def test_single_point_ledger_renders_graceful_state(self):
+    def test_single_point_ledger_renders_ranked_dot_plot(self):
+        # One snapshot is not a time series. Rather than stack every dot on the
+        # left axis of a 90%-empty plot, the card turns the axes over: a column
+        # per team, ordered by the odds, until a second snapshot arrives.
         history = [_snapshot(2031, 0, 0, {0: 0.55, 1: 0.45})]
         html = home.odds_river_card(self.data, self.teams, 2031, history=history)
         self.assertNotIn("<polyline", html)
-        self.assertIn("one snapshot so far", html)
+        self.assertIn("first snapshot", html)
         self.assertIn('class="oddsr-dot"', html)
-        self.assertIn(">AAA</text>", html)  # labels sit next to the dots
+        self.assertIn(">AAA</text>", html)  # a labelled column per team
+        self.assertIn(">BBB</text>", html)
+        self.assertIn('class="oddss-stem"', html)
         self.assertNotIn("data-oddsr", html)  # no hover plumbing for one point
         self.assertNotIn('id="oddsr-data"', html)
+
+    def test_single_point_dot_plot_is_ranked_by_odds(self):
+        # BBB leads, so BBB's column comes first — the ordering is the point.
+        history = [_snapshot(2031, 0, 0, {0: 0.20, 1: 0.90})]
+        html = home.odds_river_card(self.data, self.teams, 2031, history=history)
+        self.assertLess(html.index(">BBB</text>"), html.index(">AAA</text>"))
 
     def test_no_snapshots_for_season_renders_nothing(self):
         history = [_snapshot(2030, 1, 10, {0: 0.5, 1: 0.5})]

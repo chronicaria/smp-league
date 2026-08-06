@@ -102,6 +102,7 @@ html.wr-snap { scroll-snap-type: y proximity; }
   height: clamp(6rem, 14vw, 9rem);
   border-radius: 50%;
   object-fit: cover;
+  object-position: top;
   border: 3px solid var(--line);
   background: var(--panel-2);
   flex: 0 0 auto;

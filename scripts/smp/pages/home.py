@@ -1019,7 +1019,9 @@ def home_finances_table(data: dict[str, Any], teams: list[dict[str, Any]], playe
     """
 
 
-ROSTER_GRID_STAT_KEYS = [("pts", "PTS"), ("trb", "REB"), ("ast", "AST"), ("stl", "STL"), ("blk", "BLK")]
+# Single letters, not PTS/REB/AST/STL/BLK: twelve of these sit side by side in a
+# row, and at that density the labels were costing more width than the numbers.
+ROSTER_GRID_STAT_KEYS = [("pts", "P"), ("trb", "R"), ("ast", "A"), ("stl", "S"), ("blk", "B")]
 
 
 def _grid_stat_line(player: dict[str, Any], season: int, start_season: int) -> str:
@@ -1052,19 +1054,22 @@ def _grid_stat_line(player: dict[str, Any], season: int, start_season: int) -> s
 
 
 def _roster_grid_cell(player: dict[str, Any], season: int, start_season: int) -> str:
-    """One roster-grid cell, built like a depth card: portrait, then position and
-    age over the name and the per-game line."""
+    """One roster-grid cell: portrait, then position / age / ovr-pot over the name
+    and the per-game line."""
     rating = latest_rating(player, season)
     years = age(player, season)
     age_bit = f'<span class="hrg-age" title="Age">{esc(years)}y</span>' if years != "—" else ""
+    ovr_bit = (f'<span class="hrg-ovr" title="Overall / potential">'
+               f'{esc(rating.get("ovr", "—"))}<span class="hrg-slash">/</span>{esc(rating.get("pot", "—"))}</span>')
     injury = player.get("injury") or {}
     cross = (f' <span class="injured" title="{esc(injury.get("type", ""))}">✚</span>'
              if injury.get("type") and injury.get("type") != "Healthy" else "")
     return (
         f'<a class="hrg-cell" href="{player_url(player, "")}">'
-        f'<span class="hrg-face">{portrait_html(player, "hrg-portrait", "", size=44)}</span>'
+        f'<span class="hrg-face">{portrait_html(player, "hrg-portrait", "", size=40)}</span>'
         '<span class="hrg-id">'
-        f'<span class="hrg-meta"><span class="hrg-pos">{esc(rating.get("pos", "—"))}</span>{age_bit}</span>'
+        f'<span class="hrg-meta"><span class="hrg-pos">{esc(rating.get("pos", "—"))}</span>'
+        f'<span class="hrg-nums">{age_bit}{ovr_bit}</span></span>'
         f'<span class="hrg-name">{esc(player_name(player))}{cross}</span>'
         "</span>"
         f"{_grid_stat_line(player, season, start_season)}"
@@ -1103,22 +1108,23 @@ def roster_grid_card(players: list[dict[str, Any]], teams: list[dict[str, Any]],
             f'<div class="hrg-row" style="{team_css_vars(tid)}">'
             f'<div class="hrg-team">'
             f'<span class="hrg-team-name">{team_dot(tid, palette)}'
-            f'<a class="player-link" href="teams/{team_slug(team)}.html">{esc(team_full_name(team))}</a></span>'
-            f'<span class="hrg-count muted">{len(roster)} {"player" if len(roster) == 1 else "players"}</span></div>'
+            f'<a class="player-link" href="teams/{team_slug(team)}.html">{esc(team_full_name(team))}</a></span></div>'
             f'<div class="hrg-cells">{cells}</div>'
             "</div>"
         )
     if not rows:
         return ""
-    detail = ("Every player under contract, ordered by overall within each team. "
-              "Per-game figures come from each player's latest season with games played.")
+    detail = ("Every player under contract, ordered by overall within each team — the same "
+              "order the depth chart reads, so the rules mark the same 5 / 5 / 2 split: "
+              "starters, then bench, then reserve. P/R/A/S/B are points, rebounds, assists, "
+              "steals and blocks per game, from each player's latest season with games played.")
     # The grid is the one block on the page that scrolls inside itself, and its
     # scrollbar sits ~950px down. tabindex makes it reachable (and arrow-key
     # scrollable) without a mouse; overscroll containment is in the CSS so a
     # sideways trackpad flick here never turns into a browser back-swipe.
     return f"""
     <section class="card home-section">
-      <div class="section-title-row"><h2>League Rosters</h2><span class="muted small-copy" title="{esc(detail)}">all {shown} rostered players · scroll sideways</span></div>
+      <div class="section-title-row"><h2>League Rosters</h2><span class="muted small-copy" title="{esc(detail)}">all {shown} rostered players · starters / bench / reserve · scroll sideways</span></div>
       <div class="hrg-scroll" tabindex="0" role="group" aria-label="League rosters, {shown} players — scrolls sideways">{''.join(rows)}</div>
     </section>
     """
@@ -1505,6 +1511,63 @@ def _river_snapshot_labels(snaps: list[dict[str, Any]]) -> tuple[list[str], list
     return out_short, out_long
 
 
+def _odds_standing_card(snap: dict[str, Any], teams_sorted: list[dict[str, Any]]) -> str:
+    """The one-snapshot state of the odds river: a ranked dot plot, not a line.
+
+    A time series drawn from a single point is 90% empty plot with every dot
+    stacked on the left axis, which says nothing the Playoff Odds table above it
+    has not already said better. Turning the axes over — one column per team,
+    ordered by the odds themselves — spends the same width showing the shape of
+    the field: who is clear, who is bunched, where the cut falls. The card
+    becomes the real river the moment a second snapshot lands.
+    """
+    rows = []
+    for team in teams_sorted:
+        entry = (snap.get("teams") or {}).get(str(safe_int(team.get("tid"))))
+        if isinstance(entry, dict):
+            rows.append((100.0 * safe_float(entry.get("po")), team))
+    if not rows:
+        return ""
+    rows.sort(key=lambda r: (-r[0], team_full_name(r[1])))
+
+    width, height = 680.0, 220.0
+    ml, mr, mt, mb = 34.0, 14.0, 20.0, 30.0
+    plot_w, plot_h = width - ml - mr, height - mt - mb
+    step = plot_w / len(rows)
+
+    def sy(pct: float) -> float:
+        return mt + plot_h - max(0.0, min(100.0, pct)) / 100.0 * plot_h
+
+    parts: list[str] = []
+    for pct in (0, 25, 50, 75, 100):
+        gy = sy(pct)
+        parts.append(f'<line x1="{ml}" y1="{gy:.1f}" x2="{ml + plot_w:.1f}" y2="{gy:.1f}" class="chart-grid"/>')
+        parts.append(f'<text x="{ml - 6}" y="{gy + 3.5:.1f}" class="chart-tick" text-anchor="end">{pct}</text>')
+    for i, (pct, team) in enumerate(rows):
+        tid = safe_int(team.get("tid"))
+        cx, cy = ml + step * (i + 0.5), sy(pct)
+        colour = esc(team_chart_color(tid))
+        parts.append(
+            f'<g class="oddsr-team" data-tid="{tid}" style="--oddsr-c:{colour}">'
+            f'<line x1="{cx:.1f}" y1="{sy(0):.1f}" x2="{cx:.1f}" y2="{cy:.1f}" class="oddss-stem"/>'
+            f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="4.2" class="oddsr-dot">'
+            f'<title>{esc(team_full_name(team))}: {fmt_number(pct, 1)}% playoff odds</title></circle>'
+            f'<text x="{cx:.1f}" y="{cy - 9:.1f}" class="oddss-value" text-anchor="middle">{fmt_number(pct, 0)}</text>'
+            f'<text x="{cx:.1f}" y="{height - 8:.1f}" class="oddss-team" text-anchor="middle">{esc(team_abbrev(team))}</text>'
+            "</g>"
+        )
+    return f"""
+    <section class="card home-section">
+      <div class="section-title-row"><h2>Playoff Odds Over Time</h2><span class="muted small-copy">first snapshot · the lines start once the next update lands</span></div>
+      <div class="chart-wrap oddsr-wrap">
+        <svg viewBox="0 0 {width:.0f} {height:.0f}" class="oddsr-chart" role="img" aria-label="Current playoff odds by team">
+          {''.join(parts)}
+        </svg>
+      </div>
+    </section>
+    """
+
+
 def odds_river_card(data: dict[str, Any], teams: list[dict[str, Any]], season: int,
                     history: list[dict[str, Any]] | None = None) -> str:
     """Playoff-odds river (B14): every team's PO% across the ledger snapshots.
@@ -1520,6 +1583,8 @@ def odds_river_card(data: dict[str, Any], teams: list[dict[str, Any]], season: i
         return ""
     n = len(snaps)
     teams_sorted = sorted(active_teams_for_season(teams, season), key=team_sort_key)
+    if n == 1:
+        return _odds_standing_card(snaps[0], teams_sorted)
     ticks, tick_names = _river_snapshot_labels(snaps)
 
     width, height = 680.0, 260.0

@@ -4,6 +4,7 @@
   height: 120px;
   border-radius: .15rem;
   object-fit: cover;
+  object-position: top;
   background: var(--panel-3);
   border: 1px solid var(--line);
 }
@@ -96,6 +97,7 @@
   height: 32px;
   border-radius: .15rem;
   object-fit: cover;
+  object-position: top;
   background: var(--panel-3);
   border: 1px solid var(--line);
 }

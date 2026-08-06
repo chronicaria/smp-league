@@ -98,6 +98,8 @@ a.depth-card:hover { border-color: var(--team-secondary, var(--accent)); text-de
   height: 100%;
   border-radius: 50%;
   object-fit: cover;
+  /* Head, not chest: the 120x180 cutouts centre-crop onto the jersey. */
+  object-position: top;
 }
 .depth-portrait-wrap .depth-portrait {
   z-index: 1;
