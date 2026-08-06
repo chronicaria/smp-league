@@ -84,7 +84,7 @@ from .derived import feats_index
 
 from .ledger import load_odds_history, update_odds_ledger
 
-from .portraits import emit_faces
+from .portraits import emit_faces, emit_portraits
 
 # Static assets: split from the old inline stylesheet()/javascript() strings.
 # Concatenated in this exact order; the result is byte-identical to the old output.
@@ -258,6 +258,7 @@ def generate_site(
     }
     write_text(out_dir / "assets" / "search-index.json", json.dumps(search_index, separators=(",", ":")))
     emit_faces(out_dir, data.get("players", []))
+    emit_portraits(out_dir, data.get("players", []))
     write_app_data(out_dir, data, teams=teams, players=players, season=season, start_season=start_season)
 
     # The ledger lives beside the export it was built from, one file per league.

@@ -33,6 +33,15 @@ FIXTURE_SVG = (
 # needed to draw the rendered SVG in the first place.
 FIXTURE_FACE = {"head": {"id": "head1"}, "eyes": [{"id": "eye1"}]}
 
+# Cutout fixtures. The bytes are never decoded — portraits.py only ever copies them —
+# so a 1x1 PNG stands in for a real background-stripped headshot.
+FIXTURE_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+    "890000000a49444154789c6360000002000100ffff03000006000557bfabd400"
+    "00000049454e44ae426082"
+)
+CUTOUT_URL = "https://cdn.example/photo.jpg"
+
 FALLBACK_IDENTITY = {
     "abbrev": "SMP",
     "primary": "#3A4150",
@@ -111,16 +120,29 @@ class PortraitsFixtureCase(unittest.TestCase):
             encoding="utf-8",
         )
 
+        # Cutouts: pid 7 was cut from CUTOUT_URL, pid 8 from a photo it no longer has.
+        self.cutouts = self._tmp / "cutouts"
+        self.cutouts.mkdir()
+        (self.cutouts / "7.png").write_bytes(FIXTURE_PNG)
+        (self.cutouts / "8.png").write_bytes(FIXTURE_PNG)
+        (self.cutouts / "manifest.json").write_text(
+            json.dumps({"7": CUTOUT_URL, "8": "https://cdn.example/stale.png"}), encoding="utf-8")
+
         self._orig_dir = portraits.RENDERED_DIR
+        self._orig_cutouts = portraits.CUTOUT_DIR
         self._orig_identity = portraits._identity
         portraits.RENDERED_DIR = self.rendered
+        portraits.CUTOUT_DIR = self.cutouts
         portraits._identity = _fake_identity
         portraits.load_face_manifest.cache_clear()
+        portraits.load_cutout_manifest.cache_clear()
 
         def restore():
             portraits.RENDERED_DIR = self._orig_dir
+            portraits.CUTOUT_DIR = self._orig_cutouts
             portraits._identity = self._orig_identity
             portraits.load_face_manifest.cache_clear()
+            portraits.load_cutout_manifest.cache_clear()
 
         self.addCleanup(restore)
 
@@ -224,6 +246,55 @@ class TestEmitFaces(PortraitsFixtureCase):
         portraits.emit_faces(self.out, {7: _player(7, tid=2), 8: _player(8, tid=2)})
         self.assertTrue((self.out / "assets" / "faces" / "7.svg").exists())
         self.assertFalse((self.out / "assets" / "faces" / "8.svg").exists())
+
+
+class TestCutouts(PortraitsFixtureCase):
+    """Background-stripped photos: preferred over the original, guarded by URL."""
+
+    def test_cutout_used_when_the_player_still_carries_that_photo(self):
+        player = _player(7, img=CUTOUT_URL)
+        self.assertEqual(portraits.cutout_src(player, "../"), "../assets/portraits/7.png")
+        html = portraits.portrait_html(player)
+        self.assertIn('src="assets/portraits/7.png"', html)
+        self.assertNotIn(CUTOUT_URL, html)
+
+    def test_a_swapped_photo_abandons_its_cutout(self):
+        # pid 8's manifest entry points at a photo the player no longer has, so the
+        # cutout is somebody else's face by now — hot-link the current photo instead.
+        player = _player(8, img="https://cdn.example/new.png")
+        self.assertIsNone(portraits.cutout_src(player))
+        self.assertIn('src="https://cdn.example/new.png"', portraits.portrait_html(player))
+
+    def test_pid_without_a_cutout_hot_links(self):
+        player = _player(999, img="https://cdn.example/x.png", face=None)
+        self.assertIsNone(portraits.cutout_src(player))
+        self.assertIn('src="https://cdn.example/x.png"', portraits.portrait_html(player))
+
+    def test_missing_manifest_disables_cutouts_without_breaking(self):
+        (self.cutouts / "manifest.json").unlink()
+        portraits.load_cutout_manifest.cache_clear()
+        self.assertEqual(portraits.load_cutout_manifest(), {})
+        self.assertIn('src="%s"' % CUTOUT_URL,
+                      portraits.portrait_html(_player(7, img=CUTOUT_URL)))
+
+    def test_emit_copies_only_reachable_cutouts(self):
+        portraits.emit_portraits(self.out, [_player(7, img=CUTOUT_URL),
+                                            _player(8, img="https://cdn.example/new.png")])
+        dest = self.out / "assets" / "portraits"
+        self.assertEqual(sorted(p.name for p in dest.glob("*.png")), ["7.png"])
+        self.assertEqual((dest / "7.png").read_bytes(), FIXTURE_PNG)
+
+    def test_emit_is_idempotent(self):
+        portraits.emit_portraits(self.out, [_player(7, img=CUTOUT_URL)])
+        target = self.out / "assets" / "portraits" / "7.png"
+        stamp = target.stat().st_mtime_ns
+        portraits.emit_portraits(self.out, [_player(7, img=CUTOUT_URL)])
+        self.assertEqual(target.stat().st_mtime_ns, stamp)
+
+    def test_emit_skips_a_manifest_entry_with_no_file(self):
+        (self.cutouts / "7.png").unlink()
+        portraits.emit_portraits(self.out, [_player(7, img=CUTOUT_URL)])
+        self.assertEqual(list((self.out / "assets" / "portraits").glob("*.png")), [])
 
 
 class TestPortraitHtml(PortraitsFixtureCase):

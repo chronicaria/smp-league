@@ -90,6 +90,17 @@ class TestPoolOrdering(unittest.TestCase):
         html = dr.top_board_html(players, 2004, order=order)
         self.assertLess(html.index("Bench Warmer"), html.index("Star Player"))
 
+    def test_top_of_the_board_is_one_row(self):
+        # The strip is meant to be a single row; league.css lays out exactly this
+        # many columns, so the two numbers have to stay in step.
+        pool = [_player(i, "Player", str(i), ovr=80 - i) for i in range(40)]
+        html = dr.top_board_html(pool, 2004)
+        self.assertEqual(html.count('class="fa-card"'), dr.TOP_BOARD_CARDS)
+        self.assertEqual(dr.TOP_BOARD_CARDS, 8)
+        with open(os.path.join(_REPO, "scripts", "smp", "static", "css", "league.css"),
+                  encoding="utf-8") as fh:
+            self.assertIn(f"repeat({dr.TOP_BOARD_CARDS}, minmax(0, 1fr))", fh.read())
+
 
 class TestShippedBoardMatchesTheExport(unittest.TestCase):
     """The board file and the league JSON have to name the same people."""

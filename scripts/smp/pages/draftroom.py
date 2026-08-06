@@ -51,6 +51,10 @@ from ..portraits import portrait_html
 
 DEFAULT_ROUNDS = 12
 
+# Cards in the Top of the Board strip. Kept to one row -- .fa-card-grid lays out
+# exactly this many columns, so changing it here means changing it in league.css too.
+TOP_BOARD_CARDS = 8
+
 BOARD_ORDER_FILE = "draft_board_order.csv"
 
 
@@ -232,7 +236,7 @@ def pool_html(players: list[dict[str, Any]], season: int, order: dict[str, int] 
     </section>"""
 
 
-def top_board_html(players: list[dict[str, Any]], season: int, limit: int = 12,
+def top_board_html(players: list[dict[str, Any]], season: int, limit: int = TOP_BOARD_CARDS,
                    order: dict[str, int] | None = None) -> str:
     """The consensus top of the board, as cards — what people look at first."""
     order = order or {}
