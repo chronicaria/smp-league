@@ -88,6 +88,7 @@ from ..portraits import portrait_html
 
 from ..simmodel import league_sim, playoff_clinch_marks
 
+from .game import projected_game
 from .league import playoff_bracket_html
 
 
@@ -223,19 +224,17 @@ def playoff_odds_card(data: dict[str, Any], teams: list[dict[str, Any]], season:
 def game_projection_cards(data: dict[str, Any], teams: list[dict[str, Any]], season: int) -> str:
     """One projection card per game on the next slate (replaces "What's at Stake").
 
-    Every number is read straight off simulate_league's Monte Carlo so the
-    display always agrees with the sim:
-
-    * win probability (one decimal, both teams) — the sim's own logistic over
-      the injury-adjusted strength gap plus its +1.5-point home edge
-      (simmodel.game_win_prob); the away figure is the exact one-decimal
-      complement of the home figure;
-    * projected spread — the same projected home margin (strength gap + home
-      edge, simmodel.projected_margin) quoted sportsbook-style in half-point
-      steps for the favorite (simmodel.projected_spread): "CAM -4.5" means
-      Cambridge is favored by 4.5; a dead-even line renders "Pick";
+    * win probability and projected spread — from the game's own projected box
+      score when one exists (2,000 runs of Basketball GM's game simulation,
+      league-data/projected_box_scores.json), otherwise from simulate_league's
+      logistic over the injury-adjusted strength gap plus its +1.5-point home
+      edge. The card MUST agree with the preview page it links to, and the
+      preview quotes the box-score run whenever it has one — two answers to
+      "who is favoured?" one click apart is worse than either answer alone.
     * playoff-odds swing — each team's current PO% next to its PO% conditioned
-      on winning / losing this game, tallied inside the same 10,000 sims.
+      on winning / losing this game, tallied inside the same 10,000 sims. This
+      one stays on the season model, because a playoff probability is a
+      season-level quantity that a single game's simulation cannot produce.
 
     Cards link to the game's preview page when the export schedules the game
     (real gid); a projected round-robin filler renders as a plain card.
@@ -260,6 +259,14 @@ def game_projection_cards(data: dict[str, Any], teams: list[dict[str, Any]], sea
         home_wp = round(100.0 * safe_float(stake.get("home_wp"), 0.5), 1)
         away_wp = round(100.0 - home_wp, 1)
         spread = safe_float(stake.get("spread"), 0.0)
+        item_for_proj = items_by_gid.get(str(stake["gid"]))
+        entry = projected_game(item_for_proj) if item_for_proj else None
+        if entry:
+            # game.py's own reconciliation, restated: the sim that produced the
+            # box score also produced these two numbers, so quote it.
+            home_wp = round(100.0 * safe_float(entry.get("home_win_pct"), 0.5), 1)
+            away_wp = round(100.0 - home_wp, 1)
+            spread = -(safe_float(entry.get("home_pts")) - safe_float(entry.get("away_pts")))
         if spread < 0:
             spread_text = f"{home_ab} {spread:.1f}"
         elif spread > 0:

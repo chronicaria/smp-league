@@ -71,6 +71,25 @@ renderer after an import or they fall back to monogram roundels:
 node scripts/faces/render.mjs
 ```
 
+## Projected box scores
+
+Each game preview shows projected minutes and a projected box score per player. They come
+from Basketball GM's *own* game simulation, run 2,000 times per game against the league's
+2003-04 calibration (`pace` 90.1, `threePointTendencyFactor` 0.488, and a dozen more), so
+the projection agrees with what the game will actually do when the season is played:
+
+```sh
+cd scripts/sim && npm install
+node scripts/sim/project_box_scores.mjs --sims 2000
+```
+
+Needs Node 22.18+ and a Basketball GM checkout at `../zengm` (or `ZENGM_DIR`). Like the
+face renderer, it is a local tool whose **output is committed** to
+`league-data/projected_box_scores.json` — the GitHub Action has no zengm checkout and
+must never need one. Output is deterministic: same export, same seed, same bytes. The
+site degrades to the plain preview if the file is missing or stale, so a fresh clone and
+a re-export both build fine without re-running it. See `scripts/sim/README.md`.
+
 ## Portrait cutouts
 
 `scripts/portraits/rendered/` holds player photos with their studio backdrop flood-

@@ -1,11 +1,15 @@
 """Tests for scripts/smp/pages/game.py (game-page overhaul: split hero,
-momentum bars, DNP footer, FPTS column, Fantasy MVP, Instant Classic chip)."""
+momentum bars, DNP footer, FPTS column, Fantasy MVP, Instant Classic chip,
+projected box scores)."""
 
+import contextlib
 import json
 import math
 import os
 import re
+import shutil
 import sys
+import tempfile
 import unittest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -341,6 +345,345 @@ class TestPreviewProjection(unittest.TestCase):
         strengths = {1: 2.0, 2: -1.0}
         p = game_page.preview_home_win_prob(strengths, 1, 2)
         self.assertAlmostEqual(p, 1.0 / (1.0 + math.exp(-(2.0 - (-1.0) + 1.5) * 0.16)), places=12)
+
+
+PREVIEW_GID = "schedule-2031-3"  # the gid _scheduled_item() mints for day 3
+
+
+def _projection(gid=PREVIEW_GID, season=2031, home_tid=1, away_tid=2, sims=200,
+                home_pts=104.0, away_pts=97.0, home_win_pct=0.62, scrub_minutes=0.4):
+    """A projection file for the SMP I preview _scheduled_item() renders.
+
+    Built here rather than read from league-data/: projected_box_scores.json is
+    a local artifact the harness writes by hand, and this suite has to pass on a
+    clone that has never run scripts/sim/project_box_scores.mjs.
+
+    Minutes descend down each roster and the LAST man is under the floor, so one
+    footer name is expected per side. Rows are emitted in roster order, not
+    minutes order, so a test can prove the page does the sorting. Points are
+    shared out in proportion to minutes so that each side's rows really do add
+    up to its team score, the way the harness's output does — a fixture where
+    they did not made the printed totals tie on every game and sent the hero
+    into Pick 'em regardless of the score it was handed.
+    """
+    lines = []
+    for tid, team_pts in ((home_tid, home_pts), (away_tid, away_pts)):
+        roster = game_page.team_roster(tid, PLAYERS)
+        assert len(roster) > game_page.PROJECTED_MIN_ROWS, tid
+        minutes = [scrub_minutes if i == len(roster) - 1 else round(34.0 - 2.0 * i, 1)
+                   for i in range(len(roster))]
+        played = sum(minutes)
+        for i, player in enumerate(roster):
+            lines.append({
+                "pid": safe_int(player.get("pid")), "tid": tid,
+                "min": minutes[i], "pts": round(team_pts * minutes[i] / played, 1),
+                "trb": 4.0, "ast": 2.0,
+                "stl": 0.8, "blk": 0.4, "fg": 5.0, "fga": 11.0, "tp": 1.0, "tpa": 3.0,
+                "ft": 2.0, "fta": 2.5, "orb": 1.0, "tov": 1.5, "pf": 2.0,
+                "gs": 1.0 if i < 5 else 0.0,
+            })
+    return {
+        "season": season, "sims": sims, "generated_from": "test",
+        "games": {gid: {
+            "home_tid": home_tid, "away_tid": away_tid,
+            "home_pts": home_pts, "away_pts": away_pts, "home_win_pct": home_win_pct,
+            "players": lines,
+        }},
+    }
+
+
+@contextlib.contextmanager
+def projection_file(payload):
+    """Point game.py at `payload` (a dict, a raw string, or None for no file)."""
+    tmp = tempfile.mkdtemp()
+    path = os.path.join(tmp, "projected_box_scores.json")
+    if payload is not None:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(payload if isinstance(payload, str) else json.dumps(payload))
+    previous = os.environ.get(game_page.PROJECTION_PATH_ENV)
+    os.environ[game_page.PROJECTION_PATH_ENV] = path
+    game_page.load_projected_box_scores.cache_clear()
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(game_page.PROJECTION_PATH_ENV, None)
+        else:
+            os.environ[game_page.PROJECTION_PATH_ENV] = previous
+        game_page.load_projected_box_scores.cache_clear()
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _table_rows(html, index):
+    """Body rows of the index-th projected box table, as lists of cell text."""
+    tables = re.findall(
+        r'<table data-sortable class="gx-rot-table gx-pbox-table">(.*?)</table>', html, re.S
+    )
+    body = tables[index].split("<tbody>")[1].split("</tbody>")[0]
+    rows = []
+    for row in re.findall(r"<tr.*?</tr>", body, re.S):
+        cells = [re.sub(r"<[^>]+>", "", c).strip()
+                 for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
+        rows.append(cells)
+    return rows
+
+
+class TestProjectedBoxScores(unittest.TestCase):
+    """Previews swap their rotation tables for a projected box score when the
+    Monte Carlo has run the game."""
+
+    def setUp(self):
+        self.item = _scheduled_item()
+
+    def test_projection_replaces_the_rotation_tables(self):
+        with projection_file(_projection()):
+            html = render(self.item, [self.item], 2031)
+        self.assertIn("Projected box score", html)
+        self.assertEqual(html.count("gx-pbox-table"), 2)
+        self.assertNotIn("Projected active rotation", html)
+        # Imp is a simmodel term and has no place beside a different model's
+        # point estimates; it goes with the rotation table it belonged to.
+        self.assertNotIn(">Imp</th>", html)
+        self.assertIn("mean of 200 simulations", html)
+        self.assertIn(">MIN</th>", html)
+
+    def test_rows_are_sorted_by_projected_minutes(self):
+        with projection_file(_projection()):
+            html = render(self.item, [self.item], 2031)
+        for index in (0, 1):
+            rows = _table_rows(html, index)
+            self.assertEqual(rows[-1][0], "Total")
+            minutes = [float(r[4]) for r in rows[:-1]]
+            self.assertEqual(minutes, sorted(minutes, reverse=True))
+            self.assertTrue(all(m >= game_page.PROJECTED_MIN_FLOOR for m in minutes))
+
+    def test_sub_floor_player_is_a_footer_line_not_a_row_of_zeros(self):
+        with projection_file(_projection(scrub_minutes=0.4)):
+            html = render(self.item, [self.item], 2031)
+        self.assertEqual(html.count("Not projected to play:"), 2)
+        for tid in (1, 2):
+            roster = game_page.team_roster(tid, PLAYERS)
+            scrub = game_page.player_name(roster[-1])
+            self.assertIn(game_page.esc(scrub), html)
+        # One man per side sat down, so each table is a row short of the roster.
+        self.assertEqual(len(_table_rows(html, 0)) - 1, len(game_page.team_roster(2, PLAYERS)) - 1)
+
+    def test_totals_row_sums_the_printed_rows(self):
+        with projection_file(_projection()):
+            html = render(self.item, [self.item], 2031)
+        for index in (0, 1):
+            rows = _table_rows(html, index)
+            total = rows[-1]
+            for column in (4, 5):  # MIN, PTS
+                self.assertAlmostEqual(
+                    float(total[column]),
+                    round(sum(float(r[column]) for r in rows[:-1]), 1),
+                    places=1,
+                )
+
+    def test_every_rostered_man_appears_as_a_row_or_in_the_footer(self):
+        with projection_file(_projection()):
+            html = render(self.item, [self.item], 2031)
+        for tid in (1, 2):
+            for player in game_page.team_roster(tid, PLAYERS):
+                self.assertIn(game_page.esc(game_page.player_name(player)), html)
+
+    def test_figures_carry_one_decimal(self):
+        with projection_file(_projection()):
+            html = render(self.item, [self.item], 2031)
+        for row in _table_rows(html, 0)[:-1]:
+            for cell in (row[4], row[5], row[6]):  # MIN, PTS, REB
+                self.assertRegex(cell, r"^\d+\.\d$")
+
+
+class TestProjectedHeroAgreement(unittest.TestCase):
+    """The hero may not contradict the box score printed below it."""
+
+    def setUp(self):
+        self.item = _scheduled_item()
+        self.home_ab = TEAMS_BY_TID[1]["abbrev"]
+        self.away_ab = TEAMS_BY_TID[2]["abbrev"]
+
+    def test_hero_quotes_the_projection_when_one_is_published(self):
+        with projection_file(_projection(home_pts=104.0, away_pts=97.0, home_win_pct=0.62)):
+            html = render(self.item, [self.item], 2031)
+        self.assertIn("Win probability · 200 simulations of this game", html)
+        self.assertIn(">62.0%<", html)
+        self.assertIn(">38.0%<", html)
+        self.assertIn("%s -7.0" % self.home_ab, html)
+
+    def test_hero_names_the_side_the_projection_favours(self):
+        # Away team ahead on the mean score: the spread must flip with it.
+        with projection_file(_projection(home_pts=94.5, away_pts=100.0, home_win_pct=0.31)):
+            html = render(self.item, [self.item], 2031)
+        self.assertIn("%s -5.5" % self.away_ab, html)
+        self.assertIn(">31.0%<", html)
+        self.assertIn(">69.0%<", html)
+
+    def test_hero_falls_back_to_the_season_sim_without_a_projection(self):
+        with projection_file(None):
+            html = render(self.item, [self.item], 2031)
+        self.assertIn("Win probability · same model as the season sim", html)
+        self.assertNotIn("simulations of this game", html)
+
+    def test_hero_and_body_never_disagree_about_whether_a_projection_exists(self):
+        """A projection the body rejects must not still be speaking in the hero.
+
+        The body drops a side that cannot field PROJECTED_MIN_ROWS usable rows;
+        before the two shared one gate, the hero went on quoting the run the
+        page had just discarded.
+        """
+        payload = _projection()
+        entry = payload["games"][PREVIEW_GID]
+        home = [line for line in entry["players"] if line["tid"] == 1]
+        entry["players"] = ([line for line in entry["players"] if line["tid"] == 2]
+                            + home[:game_page.PROJECTED_MIN_ROWS - 1])
+        with projection_file(payload):
+            html = render(self.item, [self.item], 2031)
+        self.assertNotIn("Projected box score", html)
+        self.assertIn("Projected active rotation", html)
+        self.assertIn("Win probability · same model as the season sim", html)
+        self.assertNotIn("simulations of this game", html)
+
+    def test_pickem_when_the_runs_three_views_of_even_disagree(self):
+        """Mean score, win frequency and the printed totals are three views of
+        one run. On a coin-flip game they can straddle even; the hero then has
+        to say Pick 'em rather than pick a side the rest of the page argues with.
+        """
+        # Home ahead by 0.1 on the mean score, but losing the win frequency.
+        with projection_file(_projection(home_pts=97.1, away_pts=97.0, home_win_pct=0.49)):
+            html = render(self.item, [self.item], 2031)
+        self.assertIn("Pick &#x27;em", html)
+        self.assertNotIn("%s -0.1" % self.home_ab, html)
+        self.assertIn(">49.0%<", html)  # the probabilities still say what they say
+
+    def test_a_clear_favourite_is_never_downgraded_to_pickem(self):
+        with projection_file(_projection(home_pts=104.0, away_pts=97.0, home_win_pct=0.62)):
+            html = render(self.item, [self.item], 2031)
+        self.assertNotIn("Pick &#x27;em", html)
+        self.assertIn("%s -7.0" % self.home_ab, html)
+
+    def test_printed_margin_ignores_the_men_below_the_minutes_floor(self):
+        """projected_printed_margin must sum the ROWS, not the roster — that gap
+        is the whole reason the hero consults it."""
+        payload = _projection()
+        with projection_file(payload):
+            data = game_page.projected_box_data(self.item, TEAMS_BY_TID, PLAYERS)
+        self.assertIsNotNone(data)
+        printed = game_page.projected_printed_margin(data, 1)
+        entry = payload["games"][PREVIEW_GID]
+        by_tid = {1: 0.0, 2: 0.0}
+        for line in entry["players"]:
+            if line["min"] >= game_page.PROJECTED_MIN_FLOOR:
+                by_tid[line["tid"]] += line["pts"]
+        self.assertAlmostEqual(printed, by_tid[1] - by_tid[2], places=6)
+
+    def test_printed_margin_really_can_differ_from_the_full_roster_margin(self):
+        """Give one bench-warmer points the other does not have: the Total row
+        moves, the team score does not, and the two margins part company. That
+        gap is worth up to ~0.6 on the real file."""
+        payload = _projection()
+        entry = payload["games"][PREVIEW_GID]
+        scrub = min((line for line in entry["players"] if line["tid"] == 2),
+                    key=lambda line: line["min"])
+        self.assertLess(scrub["min"], game_page.PROJECTED_MIN_FLOOR)
+        scrub["pts"] += 5.0  # never printed, so it cannot reach the Total row
+        with projection_file(payload):
+            data = game_page.projected_box_data(self.item, TEAMS_BY_TID, PLAYERS)
+        printed = game_page.projected_printed_margin(data, 1)
+        full = {1: 0.0, 2: 0.0}
+        for line in entry["players"]:
+            full[line["tid"]] += line["pts"]
+        self.assertAlmostEqual(printed - (full[1] - full[2]), 5.0, places=6)
+
+    def test_rotation_total_tooltip_tracks_whichever_model_the_hero_used(self):
+        with projection_file(_projection()):
+            projected = render(self.item, [self.item], 2031)
+        with projection_file(None):
+            plain = render(self.item, [self.item], 2031)
+        self.assertIn(game_page.esc(game_page.ROTATION_TOTAL_TITLE_PROJECTED), projected)
+        self.assertNotIn(game_page.esc(game_page.ROTATION_TOTAL_TITLE), projected)
+        self.assertIn(game_page.esc(game_page.ROTATION_TOTAL_TITLE), plain)
+
+
+class TestProjectedFallback(unittest.TestCase):
+    """Every way the file can be absent, stale or malformed ends on today's
+    preview — the projection is optional and may never break a build."""
+
+    def setUp(self):
+        self.item = _scheduled_item()
+        with projection_file(None):
+            self.baseline = render(self.item, [self.item], 2031)
+        self.played = item_by_gid(ITEMS_2030, 518)
+        with projection_file(None):
+            self.played_baseline = render(self.played, ITEMS_2030, 2030)
+
+    def _stale(self, **kwargs):
+        payload = _projection()
+        entry = payload["games"][PREVIEW_GID]
+        for key, value in kwargs.items():
+            if key in ("season", "sims"):
+                payload[key] = value
+            else:
+                entry[key] = value
+        return payload
+
+    def test_every_broken_shape_renders_the_ordinary_preview(self):
+        off_roster = _projection()
+        for line in off_roster["games"][PREVIEW_GID]["players"]:
+            line["pid"] += 900000
+        cases = {
+            "no file": None,
+            "empty": "",
+            "unparseable": "{not json",
+            "a list": "[1, 2, 3]",
+            "a string": '"nope"',
+            "no games key": '{"season": 2031}',
+            "games is a list": {"season": 2031, "sims": 200, "games": []},
+            "gid absent": {"season": 2031, "sims": 200, "games": {"999999": {}}},
+            "another league's season": self._stale(season=2004),
+            "home_tid disagrees": self._stale(home_tid=99),
+            "away_tid disagrees": self._stale(away_tid=99),
+            "players is not a list": self._stale(players={}),
+            "every pid off-roster": off_roster,
+        }
+        for name, payload in cases.items():
+            with self.subTest(case=name):
+                with projection_file(payload):
+                    html = render(self.item, [self.item], 2031)
+                self.assertEqual(html, self.baseline)
+
+    def test_played_box_scores_are_untouched_by_the_projection(self):
+        """gid 518 was played; nothing about it may change when the file lands.
+
+        The third fixture is a projection that MATCHES gid 518 exactly — right
+        season, right gid, right tids — so this proves the played path ignores
+        projections outright, not merely that the staleness gate rejected a
+        mismatched one.
+        """
+        matching = _projection(gid="518", season=2030,
+                               home_tid=safe_int(self.played["home_tid"]),
+                               away_tid=safe_int(self.played["away_tid"]))
+        for payload in (None, _projection(), matching):
+            with projection_file(payload):
+                html = render(self.played, ITEMS_2030, 2030)
+            self.assertEqual(html, self.played_baseline)
+            self.assertNotIn("Projected box score", html)
+            self.assertIn("Did not play:", html)  # the real box score, unchanged
+
+    def test_the_matching_fixture_would_have_been_accepted_on_a_preview(self):
+        """Guards the test above: prove the gid-518 fixture is one the gate
+        accepts, so 'played pages are unchanged' is not passing by accident."""
+        matching = _projection(gid="518", season=2030,
+                               home_tid=safe_int(self.played["home_tid"]),
+                               away_tid=safe_int(self.played["away_tid"]))
+        preview = dict(self.played, gid=518, source="schedule", game=None,
+                       home_box=None, away_box=None, home_pts=None, away_pts=None)
+        with projection_file(matching):
+            self.assertIsNotNone(game_page.projected_game(preview))
+            self.assertIsNotNone(
+                game_page.projected_box_data(preview, TEAMS_BY_TID, PLAYERS)
+            )
 
 
 class TestDramaThreshold(unittest.TestCase):

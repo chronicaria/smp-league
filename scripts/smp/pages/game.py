@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import html
 import json
+import os
 import random
 import math
 import re
@@ -88,6 +90,38 @@ IMPACT_TITLE = (
 ROTATION_TOTAL_TITLE = (
     "Sum of the ten rotation impacts. The gap between these two totals, plus the "
     "1.5-point home edge, is what the projected spread above is built from."
+)
+# ...but on a page whose hero quotes the Monte Carlo instead, it is not what the
+# spread is built from, and saying so would be a lie in a tooltip.
+ROTATION_TOTAL_TITLE_PROJECTED = (
+    "Sum of the ten rotation impacts — the season sim's read on the two rosters. "
+    "The spread above comes from the game simulation below, which rates teams on "
+    "its own and does not always agree."
+)
+
+# Monte Carlo projections, written beside the export by the projection harness
+# (league-data/projected_box_scores.json). Local-only and entirely optional:
+# nothing in the build requires it, and a checkout that has never run the
+# harness renders the rotation tables it renders today. SMP_PROJECTED_BOX_SCORES
+# overrides the location for builds run against a copied league-data tree.
+PROJECTION_PATH = Path(__file__).resolve().parents[3] / "league-data" / "projected_box_scores.json"
+PROJECTION_PATH_ENV = "SMP_PROJECTED_BOX_SCORES"
+
+# Below this many projected minutes a man gets a footer line, not a row. A mean
+# of 0.3 minutes prints as a row of 0.0s, which is indistinguishable from a DNP
+# line in a real box score — exactly the confusion this page must not create.
+PROJECTED_MIN_FLOOR = 1.0
+
+# Fewer surviving rows than this on either side and the projection is not
+# trustworthy enough to publish (stale pids, a half-written file): fall back to
+# the rotation tables for the whole game rather than print a five-man team.
+PROJECTED_MIN_ROWS = 5
+
+PROJECTED_MIN_TITLE = (
+    "Projected minutes — the mean across every simulation of this game, not a played total"
+)
+PROJECTED_OUT_TITLE = (
+    "Under a minute of projected playing time, or not carried by the projection run at all"
 )
 
 
@@ -740,20 +774,65 @@ def preview_home_win_prob(strengths: dict[int, float], home_tid: int, away_tid: 
 def preview_projection_html(item: dict[str, Any], teams: list[dict[str, Any]],
                             teams_by_tid: dict[int, dict[str, Any]],
                             players: list[dict[str, Any]], season: int) -> str:
-    """Hero centerpiece for unplayed games: both win probabilities + the spread."""
+    """Hero centerpiece for unplayed games: both win probabilities + the spread.
+
+    Two different models can fill this block, and the page must never show one
+    while arguing the other. When this game has a projected box score below, the
+    hero quotes THAT run — its own win frequency, its own mean margin — because
+    a spread contradicted by point totals the reader can see two panels down is
+    simply wrong, however well-sourced. The two models really do disagree: over
+    the 180 previews the game sim's home edge is +3.3 (2003-04's was +3.2) where
+    SIM_HCA is +1.5, it rates teams on a wider spread than the rotation-impact
+    model, and on 35 games they name opposite favourites.
+
+    Without a projection this is the season sim's logistic, unchanged — which is
+    what the home page cards, the schedule and the standings all quote, and the
+    caption says which of the two a reader is looking at.
+    """
     home_tid = safe_int(item.get("home_tid"))
     away_tid = safe_int(item.get("away_tid"))
     if home_tid not in teams_by_tid or away_tid not in teams_by_tid:
         return ""
-    strengths = preview_strengths(teams, players, season)
-    p_home = preview_home_win_prob(strengths, home_tid, away_tid)
-    diff = strengths.get(home_tid, 0.0) - strengths.get(away_tid, 0.0) + SIM_HCA
+    # projected_box_data, not projected_game: the hero may only speak for a
+    # projection the page is actually going to print below it.
+    data = projected_box_data(item, teams_by_tid, players)
+    if data is not None:
+        entry = data["entry"]
+        sims = load_projected_box_scores()["sims"]
+        p_home = safe_float(entry.get("home_win_pct"))
+        diff = safe_float(entry.get("home_pts")) - safe_float(entry.get("away_pts"))
+        # The page shows this run three ways: the mean score, the share of sims
+        # the home team won, and the totals of the rows printed below. On a game
+        # near even, rounding and Monte Carlo noise leave them on opposite sides
+        # of it — five of the 180 previews at 2,000 sims. Name a favourite only
+        # when all three agree; otherwise call the game what it is. A tie counts
+        # as disagreement rather than a free pass, because a Total row reading
+        # 95.5 against 95.5 has printed a dead heat, and the hero above it may
+        # not then name someone a 0.3-point favourite.
+        signs = {
+            (value > 0) - (value < 0)
+            for value in (round(diff, 1), round(projected_printed_margin(data, home_tid), 1),
+                          p_home - 0.5)
+        }
+        if len(signs) > 1:
+            diff = 0.0
+        runs = f"{fmt_number(sims, 0)} simulations of this game" if sims > 0 else "the simulation below"
+        caption = f"Win probability · {runs}"
+        spread_title = f"Projected spread — the mean margin across {runs}"
+    else:
+        strengths = preview_strengths(teams, players, season)
+        p_home = preview_home_win_prob(strengths, home_tid, away_tid)
+        diff = strengths.get(home_tid, 0.0) - strengths.get(away_tid, 0.0) + SIM_HCA
+        caption = "Win probability · same model as the season sim"
+        spread_title = (
+            f"Projected spread — sim strengths plus a {fmt_number(SIM_HCA, 1)}-point home edge"
+        )
     # One-decimal percentages that always sum to 100.0.
     home_pct = round(p_home * 100, 1)
     away_pct = round(100.0 - home_pct, 1)
     home_ab = team_abbrev_for_tid(home_tid, teams_by_tid)
     away_ab = team_abbrev_for_tid(away_tid, teams_by_tid)
-    # Spread from the favorite's side: home lays -(sH-sA+HCA) points.
+    # Spread from the favorite's side: the favorite lays the projected margin.
     if abs(round(diff, 1)) < 0.05:
         spread_text = "Pick 'em"
     else:
@@ -771,20 +850,304 @@ def preview_projection_html(item: dict[str, Any], teams: list[dict[str, Any]],
             <span class="gx-proj-pct">{fmt_pct(away_pct, 1)}%</span>
             <span class="gx-proj-team">{esc(away_ab)}</span>
           </span>
-          <span class="gx-proj-spread" title="Projected spread — sim strengths plus a {fmt_number(SIM_HCA, 1)}-point home edge">{esc(spread_text)}</span>
+          <span class="gx-proj-spread" title="{esc(spread_title)}">{esc(spread_text)}</span>
           <span class="gx-proj-side gx-proj-home{' gx-proj-fav' if fav_side == 'home' else ''}">
             <span class="gx-proj-pct">{fmt_pct(home_pct, 1)}%</span>
             <span class="gx-proj-team">{esc(home_ab)}</span>
           </span>
         </div>
         <div class="gx-proj-bar" aria-hidden="true"><span class="gx-proj-fill gx-proj-fill-away" style="width:{away_pct}%"></span><span class="gx-proj-fill gx-proj-fill-home" style="width:{home_pct}%"></span></div>
-        <p class="gx-proj-caption muted small-copy">Win probability · same model as the season sim</p>
+        <p class="gx-proj-caption muted small-copy">{esc(caption)}</p>
       </div>
     """
 
 
 def team_roster(tid: int, players: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [p for p in players if safe_int(p.get("tid"), -9) == tid and p.get("retiredYear") is None]
+
+
+# ---------------------------------------------------------------------------
+# Projected box scores (Monte Carlo over Basketball GM's own game simulation)
+# ---------------------------------------------------------------------------
+
+
+@functools.lru_cache(maxsize=None)
+def load_projected_box_scores() -> dict[str, Any]:
+    """Load league-data/projected_box_scores.json once per build (cached).
+
+    Returns ``{"season": int, "sims": int, "games": {gid: entry}}``. Missing,
+    empty, unparseable, or the wrong shape → an empty ``games`` map, and every
+    preview keeps the rotation table it has today. Same posture portraits.py
+    takes toward its cutout manifest: a locally generated, optional input can
+    never be the reason a site build fails.
+    """
+    path = Path(os.environ.get(PROJECTION_PATH_ENV) or PROJECTION_PATH)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"season": -1, "sims": 0, "games": {}}
+    if not isinstance(raw, dict):
+        return {"season": -1, "sims": 0, "games": {}}
+    games = raw.get("games")
+    entries = {}
+    if isinstance(games, dict):
+        for gid, entry in games.items():
+            if isinstance(entry, dict) and isinstance(entry.get("players"), list):
+                entries[str(gid)] = entry
+    return {
+        "season": safe_int(raw.get("season"), -1),
+        "sims": safe_int(raw.get("sims"), 0),
+        "games": entries,
+    }
+
+
+def projected_game(item: dict[str, Any]) -> dict[str, Any] | None:
+    """This game's projection, or None when there is no trustworthy one.
+
+    gids are league-local — SMP I and SMP II both number games from zero — so a
+    projection is only used when its season AND both tids match the game being
+    rendered. That is the same trap ``portraits.has_face`` guards: without the
+    match, a file left over from another league paints one game's numbers onto
+    whichever game happens to hold that gid now.
+    """
+    projections = load_projected_box_scores()
+    entry = projections["games"].get(str(item.get("gid")))
+    if entry is None:
+        return None
+    if projections["season"] != safe_int(item.get("season"), -2):
+        return None
+    if safe_int(entry.get("home_tid"), -9) != safe_int(item.get("home_tid"), -8):
+        return None
+    if safe_int(entry.get("away_tid"), -9) != safe_int(item.get("away_tid"), -8):
+        return None
+    return entry
+
+
+def projected_lines(entry: dict[str, Any], tid: int,
+                    roster_by_pid: dict[int, dict[str, Any]]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """(player, projected line) for one team, ordered by projected minutes desc.
+
+    A row whose pid is not on that roster right now is dropped rather than
+    trusted: the file is regenerated by hand, and a trade or a cut between runs
+    would otherwise print a player onto the team he just left. The sort is ours,
+    not the file's — minutes are the headline, so they set the order.
+    """
+    out: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    seen: set[int] = set()
+    for line in entry.get("players") or []:
+        if not isinstance(line, dict) or safe_int(line.get("tid"), -9) != tid:
+            continue
+        pid = safe_int(line.get("pid"), -9)
+        player = roster_by_pid.get(pid)
+        if player is None or pid in seen:
+            continue
+        seen.add(pid)
+        out.append((player, line))
+    out.sort(key=lambda pair: -safe_float(pair[1].get("min")))
+    return out
+
+
+def fmt_projected(value: Any) -> str:
+    """Every projected figure prints to one decimal — a mean, never a whole
+    number that could be read as something that happened."""
+    return fmt_number(safe_float(value), 1)
+
+
+def projected_pair(made: Any, attempted: Any) -> str:
+    """Made-attempted on a projected line: 6.8-14.9, not 45.6%.
+
+    A percentage hides how many shots the projection actually hands him, which
+    on a per-game mean is the more interesting half of the pair.
+    """
+    att = safe_float(attempted)
+    if att <= 0:
+        return "—"
+    return f"{fmt_number(safe_float(made), 1)}-{fmt_number(att, 1)}"
+
+
+def projected_box_row(player: dict[str, Any], line: dict[str, Any], season: int, root: str,
+                      minutes_scale: float, cls: str = "") -> str:
+    rating = latest_rating(player, season)
+    minutes = safe_float(line.get("min"))
+    share = min(100.0, 100.0 * minutes / minutes_scale) if minutes_scale > 0 else 0.0
+    trb = safe_float(line.get("trb"))
+    cells = [
+        td(player_link(player, root), sort=player_name(player), cls="name-cell"),
+        td(esc(rating.get("pos") or "—"), sort=rating.get("pos") or ""),
+        td(esc(age(player, season))),
+        td(fmt_number(rating.get("ovr"), 0), sort=rating.get("ovr")),
+        td(fmt_projected(minutes), sort=minutes, cls="gx-pbox-min",
+           style=f"--gx-min-share:{share:.1f}%"),
+        td(fmt_projected(line.get("pts")), sort=line.get("pts")),
+        td(fmt_projected(trb), sort=trb),
+        td(fmt_projected(line.get("ast")), sort=line.get("ast")),
+        td(fmt_projected(line.get("stl")), sort=line.get("stl")),
+        td(fmt_projected(line.get("blk")), sort=line.get("blk")),
+        td(projected_pair(line.get("fg"), line.get("fga")), sort=line.get("fg")),
+        td(projected_pair(line.get("tp"), line.get("tpa")), sort=line.get("tp")),
+        td(projected_pair(line.get("ft"), line.get("fta")), sort=line.get("ft")),
+        td(fmt_projected(line.get("tov")), sort=line.get("tov")),
+        td(fmt_projected(line.get("pf")), sort=line.get("pf")),
+    ]
+    cls_attr = f' class="{cls}"' if cls else ""
+    return f"<tr{cls_attr}>{''.join(cells)}</tr>"
+
+
+def projected_totals_row(lines: list[dict[str, Any]]) -> str:
+    """Sum of the printed rows only.
+
+    The men under the minutes floor sit in the footer and are left out of the
+    total, exactly as DNPs are on a played box score — so the columns the reader
+    can see are the columns that add up. Their omission moves the projected team
+    score by a fraction of a point.
+    """
+    def total(key: str) -> float:
+        return sum(safe_float(line.get(key)) for line in lines)
+
+    cells = [
+        td("Total", sort="zzzz", cls="name-cell total-label"),
+        td(""),
+        td(""),
+        td(""),
+        td(fmt_projected(total("min")), sort=total("min"), cls="gx-pbox-min"),
+        td(fmt_projected(total("pts")), sort=total("pts")),
+        td(fmt_projected(total("trb")), sort=total("trb")),
+        td(fmt_projected(total("ast")), sort=total("ast")),
+        td(fmt_projected(total("stl")), sort=total("stl")),
+        td(fmt_projected(total("blk")), sort=total("blk")),
+        td(projected_pair(total("fg"), total("fga")), sort=total("fg")),
+        td(projected_pair(total("tp"), total("tpa")), sort=total("tp")),
+        td(projected_pair(total("ft"), total("fta")), sort=total("ft")),
+        td(fmt_projected(total("tov")), sort=total("tov")),
+        td(fmt_projected(total("pf")), sort=total("pf")),
+    ]
+    return f"<tr class=\"total-row\">{''.join(cells)}</tr>"
+
+
+def projected_out_footer(players: list[dict[str, Any]], root: str) -> str:
+    """Everyone on the roster with no row: under the minutes floor, or not
+    carried by the projection at all. One muted line, never a row of zeros."""
+    if not players:
+        return ""
+    links = [f'<a href="{player_url(p, root)}">{esc(player_name(p))}</a>' for p in players]
+    return (
+        f'<p class="gx-pbox-out small-copy muted" title="{esc(PROJECTED_OUT_TITLE)}">'
+        f'<strong>Not projected to play:</strong> {", ".join(links)}</p>'
+    )
+
+
+def projected_box_section(tid: int, playing: list[tuple[dict[str, Any], dict[str, Any]]],
+                          benched: list[dict[str, Any]], sims: int, season: int,
+                          teams_by_tid: dict[int, dict[str, Any]], root: str,
+                          minutes_scale: float) -> str:
+    """One team's projected box score: means across the Monte Carlo run.
+
+    Every label on it says projected, because the only thing separating this
+    table from a real box score is that none of it has happened. Rows run in
+    projected-minutes order — the league asked for minutes first — and the rule
+    under the last projected starter is the same one the played box score draws
+    under its starting five.
+    """
+    starters = 0
+    for _, line in playing:
+        if safe_float(line.get("gs")) < 0.5:
+            break
+        starters += 1
+    rows = []
+    for i, (player, line) in enumerate(playing):
+        cls = "bench-start" if i == starters and 0 < starters < len(playing) else ""
+        rows.append(projected_box_row(player, line, season, root, minutes_scale, cls=cls))
+    rows.append(projected_totals_row([line for _, line in playing]))
+    headers = "".join([
+        th("Name"), th("Pos"), th("Age"), th("Ovr"),
+        f'<th scope="col" class="gx-pbox-min" title="{esc(PROJECTED_MIN_TITLE)}">MIN</th>',
+        th("PTS"), th("REB"), th("AST"), th("STL"), th("BLK"),
+        th("FG"), th("3P"), th("FT"), th("TOV"), th("PF"),
+    ])
+    runs = f"mean of {fmt_number(sims, 0)} simulations" if sims > 0 else "simulated means"
+    team_name = team_full_for_tid(tid, teams_by_tid)
+    return f"""
+    <section class="box-team-section gx-rot">
+      <h2>{team_label(tid, teams_by_tid, root=root)}</h2>
+      <p class="gx-rot-cap muted small-copy">Projected box score · {esc(runs)} · no game has been played</p>
+      <div class="table-wrap">
+        <table data-sortable class="gx-rot-table gx-pbox-table">
+          <caption class="sr-only">{esc(team_name)} projected box score — {esc(runs)} of a game not yet played, not a result</caption>
+          <thead><tr>{headers}</tr></thead>
+          <tbody>{''.join(rows)}</tbody>
+        </table>
+      </div>
+      {projected_out_footer(benched, root)}
+    </section>
+    """
+
+
+def projected_box_data(item: dict[str, Any], teams_by_tid: dict[int, dict[str, Any]],
+                       players: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """THE gate: the projection this page will actually publish, or None.
+
+    Three things on a preview speak for the projection — the hero's spread and
+    win probability, the Matchup card's tooltip, and the box scores themselves —
+    and every one of them must answer this question the same way. When only the
+    body asked, a game whose rows were unusable (all pids off-roster, a side
+    thinned below the row floor) fell back to rotation tables while the hero went
+    on quoting "200 simulations of this game" at a simulation the page had just
+    thrown away. So the decision lives here once and the three callers share it.
+
+    All-or-nothing across both teams on purpose: one side as a box score and the
+    other as a ratings table would read as two different claims about one game.
+    """
+    entry = projected_game(item)
+    tids = [
+        tid for tid in (safe_int(item.get("away_tid")), safe_int(item.get("home_tid")))
+        if tid in teams_by_tid
+    ]
+    if entry is None or len(tids) != 2:
+        return None
+    per_tid: dict[int, tuple[list[tuple[dict[str, Any], dict[str, Any]]], list[dict[str, Any]]]] = {}
+    for tid in tids:
+        roster = team_roster(tid, players)
+        lines = projected_lines(entry, tid, {safe_int(p.get("pid"), -9): p for p in roster})
+        playing = [pair for pair in lines if safe_float(pair[1].get("min")) >= PROJECTED_MIN_FLOOR]
+        if len(playing) < PROJECTED_MIN_ROWS:
+            return None
+        printed = {safe_int(player.get("pid"), -9) for player, _ in playing}
+        benched = [p for p in roster if safe_int(p.get("pid"), -9) not in printed]
+        per_tid[tid] = (playing, benched)
+    # One minutes scale across both tables: a bar that means something different
+    # on the left than on the right is worse than no bar.
+    minutes_scale = max(
+        (safe_float(line.get("min")) for playing, _ in per_tid.values() for _, line in playing),
+        default=0.0,
+    )
+    return {"entry": entry, "tids": tids, "per_tid": per_tid, "minutes_scale": minutes_scale}
+
+
+def projected_printed_margin(data: dict[str, Any], home_tid: int) -> float:
+    """Home minus away over the rows the box score actually prints.
+
+    Deliberately not ``home_pts - away_pts``: the men under the minutes floor
+    sit in the footer and out of the Total row, and every row is rounded to a
+    tenth before it is summed. Worth about 0.15 points typically and 0.6 at
+    worst — which matters only when the game is close enough for that to change
+    who is ahead, and that is exactly when the hero consults it.
+    """
+    def team_pts(tid: int) -> float:
+        return sum(safe_float(line.get("pts")) for _, line in data["per_tid"][tid][0])
+
+    away_tid = next((tid for tid in data["tids"] if tid != home_tid), home_tid)
+    return team_pts(home_tid) - team_pts(away_tid)
+
+
+def projected_box_sections(data: dict[str, Any], season: int,
+                           teams_by_tid: dict[int, dict[str, Any]], root: str) -> list[str]:
+    """Both projected box scores, rendered from what projected_box_data settled on."""
+    sims = load_projected_box_scores()["sims"]
+    return [
+        projected_box_section(tid, data["per_tid"][tid][0], data["per_tid"][tid][1], sims,
+                              season, teams_by_tid, root, data["minutes_scale"])
+        for tid in data["tids"]
+    ]
 
 
 def preview_rotation_section(tid: int, players: list[dict[str, Any]], season: int,
@@ -838,11 +1201,23 @@ def preview_rotation_section(tid: int, players: list[dict[str, Any]], season: in
 
 def preview_rotations_html(item: dict[str, Any], teams_by_tid: dict[int, dict[str, Any]],
                            players: list[dict[str, Any]], season: int, root: str) -> str:
-    """Both projected rotations side by side — the preview's stand-in for a box score."""
+    """Both projected rotations side by side — the preview's stand-in for a box score.
+
+    When the Monte Carlo has run this game the two panels become projected box
+    scores instead; without the file (it is optional and local-only) they stay
+    the ratings-and-impact tables.
+    """
+    data = projected_box_data(item, teams_by_tid, players)
+    if data is not None:
+        boxes = projected_box_sections(data, season, teams_by_tid, root)
+        return f'<div class="gx-rots gx-rots-box">{"".join(boxes)}</div>'
+    tids = [
+        tid for tid in (safe_int(item.get("away_tid")), safe_int(item.get("home_tid")))
+        if tid in teams_by_tid
+    ]
     sections = [
         preview_rotation_section(tid, players, season, teams_by_tid, root)
-        for tid in (safe_int(item.get("away_tid")), safe_int(item.get("home_tid")))
-        if tid in teams_by_tid
+        for tid in tids
     ]
     sections = [s for s in sections if s]
     if not sections:
@@ -923,7 +1298,10 @@ def game_preview_html(item: dict[str, Any], teams_by_tid: dict[int, dict[str, An
             ("Top five Ovr", "top5", 1, "Mean overall of the five best men in the projected rotation"),
             ("Rotation Ovr", "rotation_ovr", 1, "Mean overall across the projected ten-man rotation"),
             ("Rotation age", "avg_age", 1, "Mean age across the projected ten-man rotation"),
-            ("Rotation total", "strength", "signed", ROTATION_TOTAL_TITLE),
+            ("Rotation total", "strength", "signed",
+             ROTATION_TOTAL_TITLE_PROJECTED
+             if projected_box_data(item, teams_by_tid, players) is not None
+             else ROTATION_TOTAL_TITLE),
         ]
     rows = []
     for label, key, fmt, hint in rows_spec:

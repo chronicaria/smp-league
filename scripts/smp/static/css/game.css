@@ -257,6 +257,33 @@ a.gx-team-name:hover { text-decoration: underline; }
 .gx-rot-imp { color: var(--text); font-weight: 600; }
 .gx-rot-reserves { margin: .35rem 0 0; }
 
+/* ---------- gx-pbox: projected box score (Monte Carlo means) ---------- */
+/* Fifteen columns instead of six, so the two teams stack. Side by side each
+   table would scroll inside a half-width wrap at every width below a very wide
+   desktop — the same "stacked beats clipped" call .gx-rots makes above, just
+   reached sooner. */
+.gx-rots-box { grid-template-columns: minmax(0, 1fr); }
+.gx-pbox-table { min-width: 950px; }
+/* MIN is the headline: the league asked for projected minutes first, so it is
+   the only bold column and the only one carrying a bar. The bar is a background
+   stripe, not an element — it has to sit under a right-aligned number without
+   disturbing the row striping, which is painted on the <tr>. */
+th.gx-pbox-min { color: var(--text); }
+td.gx-pbox-min {
+  font-weight: 700;
+  background-image: linear-gradient(
+    to left,
+    color-mix(in srgb, var(--accent) 55%, transparent) var(--gx-min-share, 0%),
+    transparent var(--gx-min-share, 0%)
+  );
+  background-repeat: no-repeat;
+  background-size: 100% 2px;
+  background-position: right bottom;
+}
+.gx-pbox-out { margin: .35rem 0 0; }
+.gx-pbox-out a { color: var(--muted); }
+.gx-pbox-out a:hover { color: var(--text); }
+
 @media (max-width: 900px) {
   .site-header { flex-direction: column; align-items: flex-start; }
   .nav-search { flex: none; width: 100%; }

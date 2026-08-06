@@ -1,0 +1,16 @@
+{
+  "name": "smp-sim-harness",
+  "private": true,
+  "type": "module",
+  "description": "Runs Basketball GM's own GameSim over the league export to project box scores",
+  "comment": "zengm's dependencies, pinned to zengm's versions, installed HERE because the zengm checkout must stay clean -- zengm-resolver.mjs points its bare specifiers at this directory. None of these is imported by our own code; README.md says which module in the GameSim import graph reaches each one.",
+  "dependencies": {
+    "@dumbmatter/idb": "8.0.0",
+    "ajv": "8.20.0",
+    "facesjs": "5.0.3",
+    "json-web-streams": "1.1.0",
+    "just-clone": "6.2.0",
+    "promise-worker-bi": "5.0.2",
+    "zod": "4.4.3"
+  }
+}
