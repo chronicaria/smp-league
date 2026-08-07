@@ -168,12 +168,11 @@ class TestBoardSlots(unittest.TestCase):
         cls.teams = sorted(cls.data["teams"], key=team_sort_key)
 
     def _picks_made(self):
-        """(round, pick) -> "Team Player", straight from the export.
+        """(round, pick) -> player name, straight from the export.
 
         Via draft_slot, not player["draft"]: a fantasy draft never touches that object,
         so reading it found zero picks in a league whose draft was complete.
         """
-        by_tid = {t["tid"]: t for t in self.teams}
         round_size = len(self.teams)
         out = {}
         for p in self.data["players"]:
@@ -181,26 +180,36 @@ class TestBoardSlots(unittest.TestCase):
                 continue
             slot = draft_slot(p, round_size)
             if slot:
-                out[slot] = (by_tid[p["tid"]]["abbrev"], player_name(p))
+                out[slot] = player_name(p)
         return out
 
     def test_every_recorded_pick_shows_in_its_slot(self):
+        # A slot names the team that MADE the pick, which is not the team that
+        # rosters the player once anyone trades. This used to expect the player's
+        # current abbrev and went red the first time it mattered: Carmelo Anthony
+        # was drafted by Toronto and is now a Gooner, and the board is right to
+        # keep saying TOR.
         picks = self._picks_made()
         self.assertTrue(picks, "no picks recorded in the export")
+        by_tid = {t["tid"]: t for t in self.teams}
+        order = dr.snake_order(sorted(by_tid), dr._rounds(self.data, self.season))
         html = dr.board_html(self.data, self.teams, self.season)
-        for (rnd, pick), (abbrev, name) in sorted(picks.items()):
+        for (rnd, pick), name in sorted(picks.items()):
             slot = html.split(f'title="Round {rnd}, pick {pick} ')[1].split("</td>")[0]
             # esc(), not the raw name: Jermaine O'Neal reaches the page as O&#x27;Neal.
             self.assertIn(esc(name), slot)
-            self.assertIn(abbrev, slot)
+            self.assertIn(by_tid[order[rnd - 1][pick - 1]]["abbrev"], slot)
         self.assertIn(f"{len(picks)} of 120 picks made", html)
 
     def test_rochester_holds_the_first_overall_pick(self):
-        self.assertEqual(self._picks_made().get((1, 1)), ("ROC", "Andrei Kirilenko"))
+        by_tid = {t["tid"]: t for t in self.teams}
+        order = dr.snake_order(sorted(by_tid), dr._rounds(self.data, self.season))
+        self.assertEqual(by_tid[order[0][0]]["abbrev"], "ROC")
+        self.assertEqual(self._picks_made().get((1, 1)), "Andrei Kirilenko")
 
     def test_drafted_players_leave_the_pool(self):
         html = dr.pool_html(free_agents(self.data), self.season)
-        for _, name in self._picks_made().values():
+        for name in self._picks_made().values():
             self.assertNotIn(esc(name), html)
 
 
