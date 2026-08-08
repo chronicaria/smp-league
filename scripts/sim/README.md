@@ -19,9 +19,17 @@ built at **1000** sims (~5 minutes); 200 is too noisy to print a tenth of a minu
 at 200 eight of the 180 games swapped favourite between honest seeds.
 
 Only the ten who dress are handed to the sim. zengm dresses the whole roster; this league
-plays ten, and the two held out are the ones the depth chart's Reserve row names — the
-site's own player-list order (overall desc, then name), not BBGM's `rosterOrder`, which
-disagrees with it on ties for two of the ten teams.
+plays ten. Who they are: drop anyone injured, then take the first ten by `rosterOrder`,
+which is where the league records its own depth — when a man goes down he is moved to the
+bottom and someone is activated in his place. Two reasons not to sort by overall instead:
+it would bench the healthy body brought in to cover an injured star, and it disagrees
+with `rosterOrder` on ties.
+
+The injury filter is not redundant with the manual moves. An injury lands *during* the
+games and the export is taken straight afterwards, so there is always a window where
+someone is hurt and still sitting in a dressed slot — Lamar Odom on day 4, at slot 4.
+Left in, zengm marks him unavailable and benches him anyway; the team just plays nine men
+and he prints a row of zeros. Dropping him here promotes the next healthy body instead.
 
 Needs Node 22.18+ (native TypeScript stripping) and a Basketball GM checkout at
 `../zengm`, or `ZENGM_DIR` pointing at one. ~85 s for 180 games × 200 sims; ~295 s at 1000.

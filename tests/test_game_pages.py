@@ -358,7 +358,8 @@ PREVIEW_GID = "schedule-2031-3"  # the gid _scheduled_item() mints for day 3
 
 
 def _projection(gid=PREVIEW_GID, season=2031, home_tid=1, away_tid=2, sims=200,
-                home_pts=104.0, away_pts=97.0, home_win_pct=0.62, scrub_minutes=0.4):
+                home_pts=104.0, away_pts=97.0, home_win_pct=0.62, scrub_minutes=0.4,
+                skip_pids=frozenset()):
     """A projection file for the SMP I preview _scheduled_item() renders.
 
     Built here rather than read from league-data/: projected_box_scores.json is
@@ -372,10 +373,16 @@ def _projection(gid=PREVIEW_GID, season=2031, home_tid=1, away_tid=2, sims=200,
     up to its team score, the way the harness's output does — a fixture where
     they did not made the printed totals tie on every game and sent the hero
     into Pick 'em regardless of the score it was handed.
+
+    ``skip_pids`` leaves those players out of the run entirely, which is what the
+    harness does to the injured and to the men who do not dress — as opposed to
+    ``scrub_minutes``, which carries a man at a minute the page then floors away.
+    Both end in the footer; only the first matches how the real file is built.
     """
     lines = []
     for tid, team_pts in ((home_tid, home_pts), (away_tid, away_pts)):
-        roster = game_page.team_roster(tid, PLAYERS)
+        roster = [p for p in game_page.team_roster(tid, PLAYERS)
+                  if safe_int(p.get("pid")) not in skip_pids]
         assert len(roster) > game_page.PROJECTED_MIN_ROWS, tid
         minutes = [scrub_minutes if i == len(roster) - 1 else round(34.0 - 2.0 * i, 1)
                    for i in range(len(roster))]
@@ -474,6 +481,45 @@ class TestProjectedBoxScores(unittest.TestCase):
             self.assertIn(game_page.esc(scrub), html)
         # One man per side sat down, so each table is a row short of the roster.
         self.assertEqual(len(_table_rows(html, 0)) - 1, len(game_page.team_roster(2, PLAYERS)) - 1)
+
+    def test_footer_names_the_injured_separately_from_the_reserves(self):
+        """An injury is why a listed starter is missing; a reserve is a choice.
+
+        The harness drops anyone hurt before it picks the ten, so a man who was
+        in a dressed slot when he got hurt lands in this footer — and the page
+        has to say which of the two reasons applies to him.
+        """
+        roster = game_page.team_roster(1, PLAYERS)
+        scrub = roster[-1]
+        hurt = roster[-2]
+        original = hurt.get("injury")
+        hurt["injury"] = {"type": "Sore Hip", "gamesRemaining": 2}
+        try:
+            # Both men are held out of the run, the way the harness would.
+            with projection_file(_projection(skip_pids={scrub["pid"], hurt["pid"]})):
+                html = render(self.item, [self.item], 2031)
+        finally:
+            if original is None:
+                hurt.pop("injury", None)
+            else:
+                hurt["injury"] = original
+        # Both sides have a footer (away renders first); take the one for tid 1.
+        footers = re.findall(r'<p class="gx-pbox-out.*?</p>', html, re.S)
+        self.assertEqual(len(footers), 2)
+        out = next(f for f in footers
+                   if game_page.esc(game_page.player_name(hurt)) in f)
+        self.assertIn("<strong>Out:</strong>", out)
+        self.assertIn(game_page.esc(game_page.player_name(hurt)), out)
+        self.assertIn("Sore Hip, 2 games", out)
+        self.assertIn("<strong>Reserve, not dressed:</strong>", out)
+        self.assertIn(game_page.esc(game_page.player_name(scrub)), out)
+        # The injured man is named for his injury, not filed under reserve.
+        self.assertLess(out.index(game_page.esc(game_page.player_name(hurt))),
+                        out.index("Reserve, not dressed:"))
+        # ...and neither of them has a row in the table.
+        names = [r[0] for r in _table_rows(html, 1)]
+        for p in (hurt, scrub):
+            self.assertNotIn(game_page.player_name(p), " ".join(names))
 
     def test_totals_row_sums_the_printed_rows(self):
         with projection_file(_projection()):

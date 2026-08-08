@@ -107,7 +107,7 @@ PROJECTED_MIN_TITLE = (
     "Projected minutes — the mean across every simulation of this game, not a played total"
 )
 PROJECTED_OUT_TITLE = (
-    "The league dresses ten; the 11th and 12th men are reserve and do not play. "
+    "The league dresses ten healthy men; the rest are injured or reserve. "
     "Also covers anyone the projection run does not carry."
 )
 
@@ -1012,15 +1012,36 @@ def projected_totals_row(lines: list[dict[str, Any]]) -> str:
 
 
 def projected_out_footer(players: list[dict[str, Any]], root: str) -> str:
-    """Everyone on the roster with no row. Normally that is exactly the two the
-    league holds out — the sim is only handed the ten who dress — so the line is
-    labelled for what it almost always is, with the tooltip covering the rest."""
+    """Everyone on the roster with no row, split by why.
+
+    The two reasons are not the same news. A reserve is a depth decision; an
+    injury is the story of the game, and it is the reason a man who is listed as
+    a starter is missing from the table above. So the hurt are named first, with
+    what is wrong with them, and the healthy reserves follow.
+    """
     if not players:
         return ""
-    links = [f'<a href="{player_url(p, root)}">{esc(player_name(p))}</a>' for p in players]
+
+    def link(p: dict[str, Any]) -> str:
+        return f'<a href="{player_url(p, root)}">{esc(player_name(p))}</a>'
+
+    hurt, reserve = [], []
+    for p in players:
+        injury = p.get("injury") or {}
+        if safe_int(injury.get("gamesRemaining")) > 0:
+            games = safe_int(injury.get("gamesRemaining"))
+            hurt.append(f'{link(p)} <span class="injured">({esc(injury.get("type") or "injured")}, '
+                        f'{games} game{"" if games == 1 else "s"})</span>')
+        else:
+            reserve.append(link(p))
+    parts = []
+    if hurt:
+        parts.append(f'<strong>Out:</strong> {", ".join(hurt)}')
+    if reserve:
+        parts.append(f'<strong>Reserve, not dressed:</strong> {", ".join(reserve)}')
     return (
         f'<p class="gx-pbox-out small-copy muted" title="{esc(PROJECTED_OUT_TITLE)}">'
-        f'<strong>Reserve, not dressed:</strong> {", ".join(links)}</p>'
+        f'{" · ".join(parts)}</p>'
     )
 
 

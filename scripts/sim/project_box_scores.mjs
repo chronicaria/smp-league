@@ -202,8 +202,17 @@ const DRESSED = 10;
 // was still auto-sorted and nobody was hurt -- would dress the injured star and bench
 // the healthy body brought in to cover him. Overall descending, then name, is only the
 // fallback for an export that carries no rosterOrder at all.
+// A hurt man cannot be one of the ten, wherever the roster happens to list him.
+// The league moves the injured to the bottom by hand, but an injury lands during
+// the games and the export is taken straight after, so there is always a window
+// where someone is hurt and still sitting in a dressed slot. Left in, zengm marks
+// him unavailable and benches him anyway -- the team just plays nine men and he
+// prints a row of zeros. Skipping him here promotes the next healthy body, which
+// is what the manager does the moment he sees the injury report.
+const isAvailable = (p) => !((p.injury?.gamesRemaining ?? 0) > 0);
+
 const dressedFor = (tid) => {
-	const roster = [...(playersByTid.get(tid) ?? [])];
+	const roster = (playersByTid.get(tid) ?? []).filter(isAvailable);
 	const ordered = roster.every((p) => Number.isInteger(p.rosterOrder));
 	roster.sort((a, b) => {
 		if (ordered) {
